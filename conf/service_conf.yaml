@@ -1,0 +1,25 @@
+rag:
+  host: 0.0.0.0
+  http_port: 9380
+mysql:
+  name: 'rag'
+  user: 'root'
+  password: 'rag'
+  host: 'localhost'
+  port: 3307
+  max_connections: 900
+  stale_timeout: 300
+  max_allowed_packet: 1073741824
+minio:
+  user: 'minioadmin'
+  password: 'minioadmin'
+  host: 'localhost:9000'
+milvus:
+  host: 'localhost'
+  port: 19530
+  topk: 10
+
+redis:
+  db: 1
+  password: 'rag'
+  host: 'localhost:6379'

@@ -1,0 +1,37 @@
+.venv
+logs/
+# Byte-code files
+*.pyc
+__pycache__/
+**/__pycache__/
+
+# Distribution / packaging
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Environments
+.env/
+venv/
+env/
+*.venv/
+
+# IDEs and Editors
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store # macOS specific
+
+# Test and coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Logs and data
+*.log
+*.sqlite3
+data/
+media/
