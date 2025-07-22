@@ -5,30 +5,14 @@ import random
 import time
 from base64 import b64encode
 from copy import deepcopy
-from functools import wraps
 from hmac import HMAC
-from io import BytesIO
 from urllib.parse import quote, urlencode
 from uuid import uuid1
 
 import requests
-from flask import (
-    Response,
-    jsonify,
-    make_response,
-    send_file,
-)
-from flask import (
-    request as flask_request,
-)
-from itsdangerous import URLSafeTimedSerializer
-from peewee import OperationalError
-from werkzeug.http import HTTP_STATUS_CODES
-
 from api import settings
 from api.constants import REQUEST_MAX_WAIT_SEC, REQUEST_WAIT_SEC
-from api.db.db_models import APIToken
-from api.utils import CustomJSONEncoder, get_uuid, json_dumps
+from api.utils import CustomJSONEncoder
 
 requests.models.complexjson.dumps = functools.partial(json.dumps, cls=CustomJSONEncoder)
 
@@ -37,7 +21,9 @@ def request(**kwargs):
     sess = requests.Session()
     stream = kwargs.pop("stream", sess.stream)
     timeout = kwargs.pop("timeout", None)
-    kwargs["headers"] = {k.replace("_", "-").upper(): v for k, v in kwargs.get("headers", {}).items()}
+    kwargs["headers"] = {
+        k.replace("_", "-").upper(): v for k, v in kwargs.get("headers", {}).items()
+    }
     prepped = requests.Request(**kwargs).prepare()
 
     if settings.CLIENT_AUTHENTICATION and settings.HTTP_APP_KEY and settings.SECRET_KEY:
@@ -53,7 +39,15 @@ def request(**kwargs):
                         settings.HTTP_APP_KEY.encode("ascii"),
                         prepped.path_url.encode("ascii"),
                         prepped.body if kwargs.get("json") else b"",
-                        urlencode(sorted(kwargs["data"].items()), quote_via=quote, safe="-._~").encode("ascii") if kwargs.get("data") and isinstance(kwargs["data"], dict) else b"",
+                        (
+                            urlencode(
+                                sorted(kwargs["data"].items()),
+                                quote_via=quote,
+                                safe="-._~",
+                            ).encode("ascii")
+                            if kwargs.get("data") and isinstance(kwargs["data"], dict)
+                            else b""
+                        ),
                     ]
                 ),
                 "sha1",
@@ -84,7 +78,9 @@ def get_exponential_backoff_interval(retries, full_jitter=False):
     return max(0, countdown)
 
 
-def get_data_error_result(code=settings.RetCode.DATA_ERROR, message="Sorry! Data missing!"):
+def get_data_error_result(
+    code=settings.RetCode.DATA_ERROR, message="Sorry! Data missing!"
+):
     logging.exception(Exception(message))
     result_dict = {"code": code, "message": message}
     response = {}
@@ -104,182 +100,26 @@ def server_error_response(e):
     except BaseException:
         pass
     if len(e.args) > 1:
-        return get_result(code=settings.RetCode.EXCEPTION_ERROR, message=repr(e.args[0]), data=e.args[1])
+        return get_result(
+            code=settings.RetCode.EXCEPTION_ERROR,
+            message=repr(e.args[0]),
+            data=e.args[1],
+        )
     if repr(e).find("index_not_found_exception") >= 0:
-        return get_result(code=settings.RetCode.EXCEPTION_ERROR, message="No chunk found, please upload file and parse it.")
+        return get_result(
+            code=settings.RetCode.EXCEPTION_ERROR,
+            message="No chunk found, please upload file and parse it.",
+        )
 
     return get_result(code=settings.RetCode.EXCEPTION_ERROR, message=repr(e))
-
-
-def error_response(response_code, message=None):
-    if message is None:
-        message = HTTP_STATUS_CODES.get(response_code, "Unknown Error")
-
-    return Response(
-        json.dumps(
-            {
-                "message": message,
-                "code": response_code,
-            }
-        ),
-        status=response_code,
-        mimetype="application/json",
-    )
-
-
-def validate_request(*args, **kwargs):
-    def wrapper(func):
-        @wraps(func)
-        def decorated_function(*_args, **_kwargs):
-            input_arguments = flask_request.json or flask_request.form.to_dict()
-            no_arguments = []
-            error_arguments = []
-            for arg in args:
-                if arg not in input_arguments:
-                    no_arguments.append(arg)
-            for k, v in kwargs.items():
-                config_value = input_arguments.get(k, None)
-                if config_value is None:
-                    no_arguments.append(k)
-                elif isinstance(v, (tuple, list)):
-                    if config_value not in v:
-                        error_arguments.append((k, set(v)))
-                elif config_value != v:
-                    error_arguments.append((k, v))
-            if no_arguments or error_arguments:
-                error_string = ""
-                if no_arguments:
-                    error_string += "required argument are missing: {}; ".format(",".join(no_arguments))
-                if error_arguments:
-                    error_string += "required argument values: {}".format(",".join(["{}={}".format(a[0], a[1]) for a in error_arguments]))
-                return get_result(code=settings.RetCode.ARGUMENT_ERROR, message=error_string)
-            return func(*_args, **_kwargs)
-
-        return decorated_function
-
-    return wrapper
-
-
-def not_allowed_parameters(*params):
-    def decorator(f):
-        def wrapper(*args, **kwargs):
-            input_arguments = flask_request.json or flask_request.form.to_dict()
-            for param in params:
-                if param in input_arguments:
-                    return get_result(code=settings.RetCode.ARGUMENT_ERROR, message=f"Parameter {param} isn't allowed")
-            return f(*args, **kwargs)
-
-        return wrapper
-
-    return decorator
 
 
 def is_localhost(ip):
     return ip in {"127.0.0.1", "::1", "[::1]", "localhost"}
 
 
-def send_file_in_mem(data, filename):
-    if not isinstance(data, (str, bytes)):
-        data = json_dumps(data)
-    if isinstance(data, str):
-        data = data.encode("utf-8")
-
-    f = BytesIO()
-    f.write(data)
-    f.seek(0)
-
-    return send_file(f, as_attachment=True, attachment_filename=filename)
-
-
 def get_result(code=settings.RetCode.SUCCESS, message="success", data=None):
     return {"code": code, "message": message, "data": data}
-
-def apikey_required(func):
-    @wraps(func)
-    def decorated_function(*args, **kwargs):
-        token = flask_request.headers.get("Authorization").split()[1]
-        objs = APIToken.query(token=token)
-        if not objs:
-            return build_error_result(message="API-KEY is invalid!", code=settings.RetCode.FORBIDDEN)
-        kwargs["tenant_id"] = objs[0].tenant_id
-        return func(*args, **kwargs)
-
-    return decorated_function
-
-
-def build_error_result(code=settings.RetCode.FORBIDDEN, message="success"):
-    response = {"code": code, "message": message}
-    response = jsonify(response)
-    response.status_code = code
-    return response
-
-
-def construct_response(code=settings.RetCode.SUCCESS, message="success", data=None, auth=None):
-    result_dict = {"code": code, "message": message, "data": data}
-    response_dict = {}
-    for key, value in result_dict.items():
-        if value is None and key != "code":
-            continue
-        else:
-            response_dict[key] = value
-    response = make_response(jsonify(response_dict))
-    if auth:
-        response.headers["Authorization"] = auth
-    response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Method"] = "*"
-    response.headers["Access-Control-Allow-Headers"] = "*"
-    response.headers["Access-Control-Allow-Headers"] = "*"
-    response.headers["Access-Control-Expose-Headers"] = "Authorization"
-    return response
-
-
-def construct_result(code=settings.RetCode.DATA_ERROR, message="data is missing"):
-    result_dict = {"code": code, "message": message}
-    response = {}
-    for key, value in result_dict.items():
-        if value is None and key != "code":
-            continue
-        else:
-            response[key] = value
-    return jsonify(response)
-
-
-def construct_json_result(code=settings.RetCode.SUCCESS, message="success", data=None):
-    if data is None:
-        return jsonify({"code": code, "message": message})
-    else:
-        return jsonify({"code": code, "message": message, "data": data})
-
-
-def construct_error_response(e):
-    logging.exception(e)
-    try:
-        if e.code == 401:
-            return construct_json_result(code=settings.RetCode.UNAUTHORIZED, message=repr(e))
-    except BaseException:
-        pass
-    if len(e.args) > 1:
-        return construct_json_result(code=settings.RetCode.EXCEPTION_ERROR, message=repr(e.args[0]), data=e.args[1])
-    return construct_json_result(code=settings.RetCode.EXCEPTION_ERROR, message=repr(e))
-
-
-def token_required(func):
-    @wraps(func)
-    def decorated_function(*args, **kwargs):
-        authorization_str = flask_request.headers.get("Authorization")
-        if not authorization_str:
-            return get_result(data=False, message="`Authorization` can't be empty")
-        authorization_list = authorization_str.split()
-        if len(authorization_list) < 2:
-            return get_result(data=False, message="Please check your authorization format.")
-        token = authorization_list[1]
-        objs = APIToken.query(token=token)
-        if not objs:
-            return get_result(data=False, message="Authentication error: API key is invalid!", code=settings.RetCode.AUTHENTICATION_ERROR)
-        kwargs["tenant_id"] = objs[0].tenant_id
-        return func(*args, **kwargs)
-
-    return decorated_function
 
 
 def get_result(code=settings.RetCode.SUCCESS, message="", data=None):
@@ -291,20 +131,6 @@ def get_result(code=settings.RetCode.SUCCESS, message="", data=None):
     else:
         response = {"code": code, "message": message}
     return response
-
-
-def get_error_data_result(
-    message="Sorry! Data missing!",
-    code=settings.RetCode.DATA_ERROR,
-):
-    result_dict = {"code": code, "message": message}
-    response = {}
-    for key, value in result_dict.items():
-        if value is None and key != "code":
-            continue
-        else:
-            response[key] = value
-    return jsonify(response)
 
 
 def get_error_argument_result(message="Invalid arguments"):
@@ -319,18 +145,19 @@ def get_error_operating_result(message="Operating error"):
     return get_result(code=settings.RetCode.OPERATING_ERROR, message=message)
 
 
-def generate_confirmation_token(tenant_id):
-    serializer = URLSafeTimedSerializer(tenant_id)
-    return "ragflow-" + serializer.dumps(get_uuid(), salt=tenant_id)[2:34]
-
-
 def get_parser_config(chunk_method, parser_config):
     if parser_config:
         return parser_config
     if not chunk_method:
         chunk_method = "naive"
     key_mapping = {
-        "naive": {"chunk_token_num": 128, "delimiter": r"\n", "html4excel": False, "layout_recognize": "DeepDOC", "raptor": {"use_raptor": False}},
+        "naive": {
+            "chunk_token_num": 128,
+            "delimiter": r"\n",
+            "html4excel": False,
+            "layout_recognize": "DeepDOC",
+            "raptor": {"use_raptor": False},
+        },
         "qa": {"raptor": {"use_raptor": False}},
         "tag": None,
         "resume": None,
@@ -341,7 +168,11 @@ def get_parser_config(chunk_method, parser_config):
         "laws": {"raptor": {"use_raptor": False}},
         "presentation": {"raptor": {"use_raptor": False}},
         "one": None,
-        "knowledge_graph": {"chunk_token_num": 8192, "delimiter": r"\n", "entity_types": ["organization", "person", "location", "event", "time"]},
+        "knowledge_graph": {
+            "chunk_token_num": 8192,
+            "delimiter": r"\n",
+            "entity_types": ["organization", "person", "location", "event", "time"],
+        },
         "email": None,
         "picture": None,
     }
@@ -371,9 +202,20 @@ def get_data_openai(
             "prompt_tokens": prompt_tokens,
             "completion_tokens": completion_tokens,
             "total_tokens": total_tokens,
-            "completion_tokens_details": {"reasoning_tokens": 0, "accepted_prediction_tokens": 0, "rejected_prediction_tokens": 0},
+            "completion_tokens_details": {
+                "reasoning_tokens": 0,
+                "accepted_prediction_tokens": 0,
+                "rejected_prediction_tokens": 0,
+            },
         },
-        "choices": [{"message": {"role": "assistant", "content": content}, "logprobs": None, "finish_reason": finish_reason, "index": 0}],
+        "choices": [
+            {
+                "message": {"role": "assistant", "content": content},
+                "logprobs": None,
+                "finish_reason": finish_reason,
+                "index": 0,
+            }
+        ],
     }
 
 
@@ -445,7 +287,11 @@ def deep_merge(default: dict, custom: dict) -> dict:
         base_dict, override_dict = stack.pop()
 
         for key, val in override_dict.items():
-            if key in base_dict and isinstance(val, dict) and isinstance(base_dict[key], dict):
+            if (
+                key in base_dict
+                and isinstance(val, dict)
+                and isinstance(base_dict[key], dict)
+            ):
                 stack.append((base_dict[key], val))
             else:
                 base_dict[key] = val

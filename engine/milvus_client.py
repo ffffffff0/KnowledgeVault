@@ -1,20 +1,18 @@
+from api.utils.log_utils import init_root_logger
+init_root_logger("milvus_client")
+
+import copy
+import logging
+
 from pymilvus import (
     connections,
-    FieldSchema,
-    CollectionSchema,
     DataType,
-    Collection,
-    utility,
     Partition,
     MilvusClient,
     Function,
     FunctionType,
 )
 from concurrent.futures import ThreadPoolExecutor
-import asyncio
-import copy
-from functools import partial
-import time
 from datetime import datetime
 from typing import List
 from rag import settings
@@ -38,19 +36,6 @@ class MilvusClientBase:
         self.executor = ThreadPoolExecutor(max_workers=10)
         self.top_k = settings.MILVUS["topk"]
         self.search_params = {"metric_type": "L2", "params": {"nprobe": 256}}
-        self.dense_index = {
-            "metric_type": "IP",
-            "index_type": "HNSW",
-            "params": {"efConstruction": 128, "M": 16},
-        }
-        self.sparse_index = {
-            "index_type": "SPARSE_INVERTED_INDEX",
-            "metric_type": "IP",
-            "params": {
-                "inverted_index_algo": "DAAT_MAXSCORE",
-            },
-        }
-        self.last_init_ts = time.time() - 100
         self.init()
 
     @property
@@ -80,6 +65,12 @@ class MilvusClientBase:
             milvus_client.using_database(self.db_name)
             print(f"switched to db: '{self.db_name}'")
             self.sess = milvus_client
+        except Exception as e:
+            print(f"Failed to initialize Milvus client: {e}")
+            raise e
+
+    def create_collection(self, vector_size: int):
+        try:
             if not self.sess.has_collection(self.kb_name):
                 schema = self.sess.create_schema()
                 schema.add_field(field_name="chunk_id", datatype=DataType.VARCHAR, max_length=64, is_primary=True)
@@ -88,17 +79,17 @@ class MilvusClientBase:
                 schema.add_field(field_name="kb_id", datatype=DataType.VARCHAR, max_length=64)
                 schema.add_field(field_name="create_at", datatype=DataType.VARCHAR, max_length=64)
                 schema.add_field(field_name="content", datatype=DataType.VARCHAR, max_length=4000, enable_analyzer=True)
-                schema.add_field(field_name="dense_vector", datatype=DataType.FLOAT_VECTOR, dim=self.vector_dim)
+                schema.add_field(field_name="dense_vector", datatype=DataType.FLOAT_VECTOR, dim=vector_size)
                 schema.add_field(field_name="sparse_vector", datatype=DataType.SPARSE_FLOAT_VECTOR)
                 bm25_function = Function(
-                    name="text_bm25_emb", # Function name
-                    input_field_names=["content"], # Name of the VARCHAR field containing raw text data
-                    output_field_names=["sparse_vector"], # Name of the SPARSE_FLOAT_VECTOR field reserved to store generated embeddings
-                    function_type=FunctionType.BM25, # Set to `BM25`
+                    name="text_bm25_emb",
+                    input_field_names=["content"],
+                    output_field_names=["sparse_vector"],
+                    function_type=FunctionType.BM25
                 )
 
                 schema.add_function(bm25_function)
-                index_params = milvus_client.prepare_index_params()
+                index_params = self.sess.prepare_index_params()
                 index_params.add_index(
                     field_name="sparse_vector",
                     index_type="SPARSE_INVERTED_INDEX",
@@ -118,14 +109,13 @@ class MilvusClientBase:
                         "M": 16
                     }
                 )
-                milvus_client.create_collection(
+                self.sess.create_collection(
                     collection_name=self.kb_name,
                     schema=schema,
                     index_params=index_params,
                 )
-
         except Exception as e:
-            print(f"Failed to initialize Milvus client: {e}")
+            print(f"Failed to create collection: {e}")
             raise e
 
     def insert(self, documents: list[dict],  user_id: str, knowledgebaseId: str = None) -> list[str]:
@@ -151,13 +141,12 @@ class MilvusClientBase:
             try:
                 self.sess.insert(collection_name=self.kb_name, data=data)
             except Exception as e:
+                logging.error(f"Failed to insert data into Milvus: {e}")
                 res.append(str(e))
-                logger.warning("milvus.insert got exception: " + str(e))
 
         return res
     
     def delete(self, condition: str) -> int:
-        logger.debug("milvus delete condition: " + condition)
         for _ in range(ATTEMPT_TIME):
             try:
                 self.sess.delete(
@@ -166,12 +155,11 @@ class MilvusClientBase:
                 )
                 return 1
             except Exception as e:
-                logger.warning("milvus.delete got exception: " + str(e))
+                logging.error(f"Failed to delete data from Milvus: {e}")
                 return 0
         return 0
     
     def filter(self, condition: str) -> list[dict]:
-        logger.debug("milvus filter condition: " + condition)
         for _ in range(ATTEMPT_TIME):
             try:
                 res = self.sess.query(
@@ -181,6 +169,7 @@ class MilvusClientBase:
                 )
                 return res
             except Exception as e:
-                logger.warning("milvus.filter got exception: " + str(e))
+                logging.error(f"Failed to filter data from Milvus: {e}")
+                return []
 
         return []

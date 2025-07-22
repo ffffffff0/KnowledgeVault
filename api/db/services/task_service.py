@@ -9,7 +9,7 @@ from deepdoc.parser import PdfParser
 from peewee import JOIN
 from api.db.db_models import DB, File2Document, File
 from api.db import StatusEnum, FileType, TaskStatus
-from api.db.db_models import Task, Document, Knowledgebase, Tenant
+from api.db.db_models import Task, Document, Knowledgebase
 from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
 from api.utils import current_timestamp, get_uuid
@@ -17,7 +17,6 @@ from deepdoc.parser.excel_parser import RAGFlowExcelParser
 from rag.settings import get_svr_queue_name
 from rag.utils.storage_factory import STORAGE_IMPL
 from rag.utils.redis_conn import REDIS_CONN
-from api import settings
 
 
 def trim_header_by_lines(text: str, max_length) -> str:

@@ -1,19 +1,3 @@
-#
-#  Copyright 2024 The InfiniFlow Authors. All Rights Reserved.
-#
-#  Licensed under the Apache License, Version 2.0 (the "License");
-#  you may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS,
-#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#  See the License for the specific language governing permissions and
-#  limitations under the License.
-#
-
 import _thread as thread
 import base64
 import hashlib
@@ -98,7 +82,9 @@ class FishAudioTTS(Base):
                 with client.stream(
                     method="POST",
                     url=self.base_url,
-                    content=ormsgpack.packb(request, option=ormsgpack.OPT_SERIALIZE_PYDANTIC),
+                    content=ormsgpack.packb(
+                        request, option=ormsgpack.OPT_SERIALIZE_PYDANTIC
+                    ),
                     headers=self.headers,
                     timeout=None,
                 ) as response:
@@ -127,7 +113,11 @@ class QwenTTS(Base):
         from collections import deque
 
         from dashscope.api_entities.dashscope_response import SpeechSynthesisResponse
-        from dashscope.audio.tts import ResultCallback, SpeechSynthesisResult, SpeechSynthesizer
+        from dashscope.audio.tts import (
+            ResultCallback,
+            SpeechSynthesisResult,
+            SpeechSynthesizer,
+        )
 
         class Callback(ResultCallback):
             def __init__(self) -> None:
@@ -162,7 +152,9 @@ class QwenTTS(Base):
 
         text = self.normalize_text(text)
         callback = Callback()
-        SpeechSynthesizer.call(model=self.model_name, text=text, callback=callback, format="mp3")
+        SpeechSynthesizer.call(
+            model=self.model_name, text=text, callback=callback, format="mp3"
+        )
         try:
             for data in callback._run():
                 yield data
@@ -181,13 +173,21 @@ class OpenAITTS(Base):
         self.api_key = key
         self.model_name = model_name
         self.base_url = base_url
-        self.headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
+        self.headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
 
     def tts(self, text, voice="alloy"):
         text = self.normalize_text(text)
         payload = {"model": self.model_name, "voice": voice, "input": text}
 
-        response = requests.post(f"{self.base_url}/audio/speech", headers=self.headers, json=payload, stream=True)
+        response = requests.post(
+            f"{self.base_url}/audio/speech",
+            headers=self.headers,
+            json=payload,
+            stream=True,
+        )
 
         if response.status_code != 200:
             raise Exception(f"**Error**: {response.status_code}, {response.text}")
@@ -221,17 +221,35 @@ class SparkTTS(Base):
         signature_origin = "host: " + "ws-api.xfyun.cn" + "\n"
         signature_origin += "date: " + date + "\n"
         signature_origin += "GET " + "/v2/tts " + "HTTP/1.1"
-        signature_sha = hmac.new(self.APISecret.encode("utf-8"), signature_origin.encode("utf-8"), digestmod=hashlib.sha256).digest()
+        signature_sha = hmac.new(
+            self.APISecret.encode("utf-8"),
+            signature_origin.encode("utf-8"),
+            digestmod=hashlib.sha256,
+        ).digest()
         signature_sha = base64.b64encode(signature_sha).decode(encoding="utf-8")
-        authorization_origin = 'api_key="%s", algorithm="%s", headers="%s", signature="%s"' % (self.APIKey, "hmac-sha256", "host date request-line", signature_sha)
-        authorization = base64.b64encode(authorization_origin.encode("utf-8")).decode(encoding="utf-8")
+        authorization_origin = (
+            'api_key="%s", algorithm="%s", headers="%s", signature="%s"'
+            % (self.APIKey, "hmac-sha256", "host date request-line", signature_sha)
+        )
+        authorization = base64.b64encode(authorization_origin.encode("utf-8")).decode(
+            encoding="utf-8"
+        )
         v = {"authorization": authorization, "date": date, "host": "ws-api.xfyun.cn"}
         url = url + "?" + urlencode(v)
         return url
 
     def tts(self, text):
-        BusinessArgs = {"aue": "lame", "sfl": 1, "auf": "audio/L16;rate=16000", "vcn": self.model_name, "tte": "utf8"}
-        Data = {"status": 2, "text": base64.b64encode(text.encode("utf-8")).decode("utf-8")}
+        BusinessArgs = {
+            "aue": "lame",
+            "sfl": 1,
+            "auf": "audio/L16;rate=16000",
+            "vcn": self.model_name,
+            "tte": "utf8",
+        }
+        Data = {
+            "status": 2,
+            "text": base64.b64encode(text.encode("utf-8")).decode("utf-8"),
+        }
         CommonArgs = {"app_id": self.APPID}
         audio_queue = self.audio_queue
         model_name = self.model_name
@@ -271,14 +289,22 @@ class SparkTTS(Base):
         wsUrl = self.create_url()
         websocket.enableTrace(False)
         a = Callback()
-        ws = websocket.WebSocketApp(wsUrl, on_open=a.on_open, on_error=a.on_error, on_close=a.on_close, on_message=a.on_message)
+        ws = websocket.WebSocketApp(
+            wsUrl,
+            on_open=a.on_open,
+            on_error=a.on_error,
+            on_close=a.on_close,
+            on_message=a.on_message,
+        )
         status_code = 0
         ws.run_forever(sslopt={"cert_reqs": ssl.CERT_NONE})
         while True:
             audio_chunk = self.audio_queue.get()
             if audio_chunk is None:
                 if status_code == 0:
-                    raise Exception(f"Fail to access model({model_name}) using the provided credentials. **ERROR**: Invalid APPID, API Secret, or API Key.")
+                    raise Exception(
+                        f"Fail to access model({model_name}) using the provided credentials. **ERROR**: Invalid APPID, API Secret, or API Key."
+                    )
                 else:
                     break
             status_code = 1
@@ -291,12 +317,20 @@ class XinferenceTTS(Base):
     def __init__(self, key, model_name, **kwargs):
         self.base_url = kwargs.get("base_url", None)
         self.model_name = model_name
-        self.headers = {"accept": "application/json", "Content-Type": "application/json"}
+        self.headers = {
+            "accept": "application/json",
+            "Content-Type": "application/json",
+        }
 
     def tts(self, text, voice="中文女", stream=True):
         payload = {"model": self.model_name, "input": text, "voice": voice}
 
-        response = requests.post(f"{self.base_url}/v1/audio/speech", headers=self.headers, json=payload, stream=stream)
+        response = requests.post(
+            f"{self.base_url}/v1/audio/speech",
+            headers=self.headers,
+            json=payload,
+            stream=stream,
+        )
 
         if response.status_code != 200:
             raise Exception(f"**Error**: {response.status_code}, {response.text}")
@@ -307,7 +341,9 @@ class XinferenceTTS(Base):
 
 
 class OllamaTTS(Base):
-    def __init__(self, key, model_name="ollama-tts", base_url="https://api.ollama.ai/v1"):
+    def __init__(
+        self, key, model_name="ollama-tts", base_url="https://api.ollama.ai/v1"
+    ):
         if not base_url:
             base_url = "https://api.ollama.ai/v1"
         self.model_name = model_name
@@ -319,7 +355,12 @@ class OllamaTTS(Base):
     def tts(self, text, voice="standard-voice"):
         payload = {"model": self.model_name, "voice": voice, "input": text}
 
-        response = requests.post(f"{self.base_url}/audio/tts", headers=self.headers, json=payload, stream=True)
+        response = requests.post(
+            f"{self.base_url}/audio/tts",
+            headers=self.headers,
+            json=payload,
+            stream=True,
+        )
 
         if response.status_code != 200:
             raise Exception(f"**Error**: {response.status_code}, {response.text}")
@@ -336,12 +377,21 @@ class GPUStackTTS(Base):
         self.base_url = kwargs.get("base_url", None)
         self.api_key = key
         self.model_name = model_name
-        self.headers = {"accept": "application/json", "Content-Type": "application/json", "Authorization": f"Bearer {self.api_key}"}
+        self.headers = {
+            "accept": "application/json",
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}",
+        }
 
     def tts(self, text, voice="Chinese Female", stream=True):
         payload = {"model": self.model_name, "input": text, "voice": voice}
 
-        response = requests.post(f"{self.base_url}/v1/audio/speech", headers=self.headers, json=payload, stream=stream)
+        response = requests.post(
+            f"{self.base_url}/v1/audio/speech",
+            headers=self.headers,
+            json=payload,
+            stream=stream,
+        )
 
         if response.status_code != 200:
             raise Exception(f"**Error**: {response.status_code}, {response.text}")
@@ -354,13 +404,21 @@ class GPUStackTTS(Base):
 class SILICONFLOWTTS(Base):
     _FACTORY_NAME = "SILICONFLOW"
 
-    def __init__(self, key, model_name="FunAudioLLM/CosyVoice2-0.5B", base_url="https://api.siliconflow.cn/v1"):
+    def __init__(
+        self,
+        key,
+        model_name="FunAudioLLM/CosyVoice2-0.5B",
+        base_url="https://api.siliconflow.cn/v1",
+    ):
         if not base_url:
             base_url = "https://api.siliconflow.cn/v1"
         self.api_key = key
         self.model_name = model_name
         self.base_url = base_url
-        self.headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
+        self.headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
 
     def tts(self, text, voice="anna"):
         text = self.normalize_text(text)
@@ -375,7 +433,9 @@ class SILICONFLOWTTS(Base):
             "gain": 0,
         }
 
-        response = requests.post(f"{self.base_url}/audio/speech", headers=self.headers, json=payload)
+        response = requests.post(
+            f"{self.base_url}/audio/speech", headers=self.headers, json=payload
+        )
 
         if response.status_code != 200:
             raise Exception(f"**Error**: {response.status_code}, {response.text}")

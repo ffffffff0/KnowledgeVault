@@ -7,8 +7,6 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db import StatusEnum
 from api.utils import get_uuid
 from api.utils.api_utils import get_result
-from engine.milvus_client import MilvusClientBase
-
 
 router = APIRouter(tags=["kb"], prefix="/kb")
 
@@ -46,17 +44,13 @@ async def create_kb_handler(req: KBCreateRequest):
             "auto_keywords": 0,
             "auto_questions": 0,
             "html4excel": False,
-            "raptor": {
-                "use_raptor": False
-            },
+            "raptor": {"use_raptor": False},
         }
         kb_info["parser_id"] = "naive"
 
         print(f"Creating knowledge base with info: {kb_info}")
         if not KnowledgebaseService.save(**kb_info):
             return get_data_error_result()
-        # create milvus collection
-        MilvusClientBase(user_id=req.user_id, kb_id=kb_info['id'])
         return get_result(data={"kb_id": kb_info["id"]})
     except Exception as e:
         return server_error_response(e)

@@ -65,7 +65,7 @@ from rag.settings import (
 from rag.utils import num_tokens_from_string, truncate
 from rag.utils.redis_conn import REDIS_CONN, RedisDistributedLock
 from rag.utils.storage_factory import STORAGE_IMPL
-from graphrag.utils import get_llm_cache, set_llm_cache, get_tags_from_cache, set_tags_to_cache, chat_limiter
+from rag.utils.rag_utils import get_llm_cache, set_llm_cache, get_tags_from_cache, set_tags_to_cache, chat_limiter
 
 from engine.milvus_client import MilvusClientBase
 
@@ -669,6 +669,10 @@ async def run_raptor(row, chat_mdl, embd_mdl, vector_size, callback=None):
         tk_count += num_tokens_from_string(content)
     return res, tk_count
 
+def init_kb(user_id: str, kb_id: str, vector_size: int):
+    mc = MilvusClientBase(user_id, kb_id)
+    mc.create_collection(vector_size=vector_size)
+    return mc
 
 async def do_handle_task(task):
     print(f"task info: {json.dumps(task, indent=2)}")  # Debugging line
@@ -707,6 +711,9 @@ async def do_handle_task(task):
         progress_callback(-1, msg=error_message)
         logging.exception(error_message)
         raise
+     
+    # init kb
+    mc = init_kb(task_user_id, task_dataset_id, vector_size)
 
     # Either using RAPTOR or Standard chunking methods
     if task.get("task_type", "") == "raptor":
@@ -765,8 +772,6 @@ async def do_handle_task(task):
             )
             raise
 
-
-    mc = MilvusClientBase(user_id=task_user_id, kb_id=task_dataset_id)
     for b in range(0, len(chunks), DOC_BULK_SIZE):
         # TODO: use milvus
         print(f"insert chunks {b} to {b + DOC_BULK_SIZE} for task {task_id}")
@@ -820,7 +825,7 @@ async def do_handle_task(task):
     )
 
     DocumentService.increment_chunk_num(
-        task_doc_id, task_dataset_id, token_count, chunk_count, 0
+        task_doc_id, task_dataset_id, chunk_count, 0
     )
 
     time_cost = timer() - start_ts

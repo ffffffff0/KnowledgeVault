@@ -1,4 +1,5 @@
 import settings
+import re
 from fastapi import APIRouter, UploadFile, File, Form
 from typing import List
 from api.constants import FILE_NAME_LEN_LIMIT
@@ -10,9 +11,6 @@ from api.utils.api_utils import get_result, get_data_error_result, server_error_
 from api.models.document_schema import RunDocument, UpdateParserRequest
 from api.db.services.task_service import queue_tasks
 from api.db import (
-    VALID_FILE_TYPES,
-    VALID_TASK_STATUS,
-    FileSource,
     FileType,
     ParserType,
     TaskStatus,

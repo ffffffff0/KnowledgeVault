@@ -1,27 +1,18 @@
-import json
 import logging
 import random
-import re
-from concurrent.futures import ThreadPoolExecutor
-from copy import deepcopy
 from datetime import datetime
-from io import BytesIO
 
-import trio
 import xxhash
 from peewee import fn
 
-from api import settings
-from api.constants import IMG_BASE64_PREFIX
-from api.db import FileType, LLMType, ParserType, StatusEnum, TaskStatus, UserTenantRole
-from api.db.db_models import DB, Document, Knowledgebase, Task, Tenant, UserTenant
+from api.db import FileType, StatusEnum, TaskStatus
+from api.db.db_models import DB, Document, Knowledgebase, Task, Tenant
 from api.db.db_utils import bulk_insert_into_db
 from api.db.services.common_service import CommonService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.utils import current_timestamp, get_format_time, get_uuid
 from rag.settings import get_svr_queue_name, SVR_CONSUMER_GROUP_NAME
 from rag.utils.redis_conn import REDIS_CONN
-from rag.utils.storage_factory import STORAGE_IMPL
 
 
 class DocumentService(CommonService):
@@ -184,7 +175,7 @@ class DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def increment_chunk_num(cls, doc_id, kb_id, token_num, chunk_num, duration):
+    def increment_chunk_num(cls, doc_id, kb_id, chunk_num, duration):
         num = (
             cls.model.update(
                 chunk_num=cls.model.chunk_num + chunk_num,
@@ -193,7 +184,8 @@ class DocumentService(CommonService):
             .where(cls.model.id == doc_id)
             .execute()
         )
-        if num == 0: raise LookupError("Document not found which is supposed to be there")
+        if num == 0:
+            raise LookupError("Document not found which is supposed to be there")
         num = (
             Knowledgebase.update(
                 chunk_num=Knowledgebase.chunk_num + chunk_num,
@@ -298,49 +290,6 @@ class DocumentService(CommonService):
         if not docs:
             return
         return docs[0]["tenant_id"]
-
-    @classmethod
-    @DB.connection_context()
-    def accessible(cls, doc_id, user_id):
-        docs = (
-            cls.model.select(cls.model.id)
-            .join(Knowledgebase, on=(Knowledgebase.id == cls.model.kb_id))
-            .join(UserTenant, on=(UserTenant.tenant_id == Knowledgebase.user_id))
-            .where(cls.model.id == doc_id, UserTenant.user_id == user_id)
-            .paginate(0, 1)
-        )
-        docs = docs.dicts()
-        if not docs:
-            return False
-        return True
-
-    @classmethod
-    @DB.connection_context()
-    def accessible4deletion(cls, doc_id, user_id):
-        docs = (
-            cls.model.select(cls.model.id)
-            .join(Knowledgebase, on=(Knowledgebase.id == cls.model.kb_id))
-            .join(
-                UserTenant,
-                on=(
-                    (UserTenant.tenant_id == Knowledgebase.created_by)
-                    & (UserTenant.user_id == user_id)
-                ),
-            )
-            .where(
-                cls.model.id == doc_id,
-                UserTenant.status == StatusEnum.VALID.value,
-                (
-                    (UserTenant.role == UserTenantRole.NORMAL)
-                    | (UserTenant.role == UserTenantRole.OWNER)
-                ),
-            )
-            .paginate(0, 1)
-        )
-        docs = docs.dicts()
-        if not docs:
-            return False
-        return True
 
     @classmethod
     @DB.connection_context()
@@ -576,138 +525,3 @@ def get_queue_length(priority):
         get_svr_queue_name(priority), SVR_CONSUMER_GROUP_NAME
     )
     return int(group_info.get("lag", 0))
-
-
-def doc_upload_and_parse(conversation_id, file_objs, user_id):
-    from api.db.services.api_service import API4ConversationService
-    from api.db.services.conversation_service import ConversationService
-    from api.db.services.dialog_service import DialogService
-    from api.db.services.file_service import FileService
-    from api.db.services.llm_service import LLMBundle
-    from api.db.services.user_service import TenantService
-    from rag.app import audio, email, naive, picture, presentation
-
-    e, conv = ConversationService.get_by_id(conversation_id)
-    if not e:
-        e, conv = API4ConversationService.get_by_id(conversation_id)
-    assert e, "Conversation not found!"
-
-    e, dia = DialogService.get_by_id(conv.dialog_id)
-    if not dia.kb_ids:
-        raise LookupError(
-            "No knowledge base associated with this conversation. "
-            "Please add a knowledge base before uploading documents"
-        )
-    kb_id = dia.kb_ids[0]
-    e, kb = KnowledgebaseService.get_by_id(kb_id)
-    if not e:
-        raise LookupError("Can't find this knowledgebase!")
-
-    embd_mdl = LLMBundle(
-        kb.tenant_id, LLMType.EMBEDDING, llm_name=kb.embd_id, lang=kb.language
-    )
-
-    err, files = FileService.upload_document(kb, file_objs, user_id)
-    assert not err, "\n".join(err)
-
-    def dummy(prog=None, msg=""):
-        pass
-
-    FACTORY = {
-        ParserType.PRESENTATION.value: presentation,
-        ParserType.PICTURE.value: picture,
-        ParserType.AUDIO.value: audio,
-        ParserType.EMAIL.value: email,
-    }
-    parser_config = {
-        "chunk_token_num": 4096,
-        "delimiter": "\n!?;。；！？",
-        "layout_recognize": "Plain Text",
-    }
-    exe = ThreadPoolExecutor(max_workers=12)
-    threads = []
-    doc_nm = {}
-    for d, blob in files:
-        doc_nm[d["id"]] = d["name"]
-    for d, blob in files:
-        kwargs = {
-            "callback": dummy,
-            "parser_config": parser_config,
-            "from_page": 0,
-            "to_page": 100000,
-            "tenant_id": kb.tenant_id,
-            "lang": kb.language,
-        }
-        threads.append(
-            exe.submit(
-                FACTORY.get(d["parser_id"], naive).chunk, d["name"], blob, **kwargs
-            )
-        )
-
-    for (docinfo, _), th in zip(files, threads):
-        docs = []
-        doc = {"doc_id": docinfo["id"], "kb_id": [kb.id]}
-        for ck in th.result():
-            d = deepcopy(doc)
-            d.update(ck)
-            d["id"] = xxhash.xxh64(
-                (ck["content_with_weight"] + str(d["doc_id"])).encode("utf-8")
-            ).hexdigest()
-            d["create_time"] = str(datetime.now()).replace("T", " ")[:19]
-            d["create_timestamp_flt"] = datetime.now().timestamp()
-            if not d.get("image"):
-                docs.append(d)
-                continue
-
-            output_buffer = BytesIO()
-            if isinstance(d["image"], bytes):
-                output_buffer = BytesIO(d["image"])
-            else:
-                d["image"].save(output_buffer, format="JPEG")
-
-            STORAGE_IMPL.put(kb.id, d["id"], output_buffer.getvalue())
-            d["img_id"] = "{}-{}".format(kb.id, d["id"])
-            d.pop("image", None)
-            docs.append(d)
-
-    parser_ids = {d["id"]: d["parser_id"] for d, _ in files}
-    docids = [d["id"] for d, _ in files]
-    chunk_counts = {id: 0 for id in docids}
-    token_counts = {id: 0 for id in docids}
-    es_bulk_size = 64
-
-    def embedding(doc_id, cnts, batch_size=16):
-        nonlocal embd_mdl, chunk_counts, token_counts
-        vects = []
-        for i in range(0, len(cnts), batch_size):
-            vts, c = embd_mdl.encode(cnts[i : i + batch_size])
-            vects.extend(vts.tolist())
-            chunk_counts[doc_id] += len(cnts[i : i + batch_size])
-            token_counts[doc_id] += c
-        return vects
-
-    idxnm = "111"
-    try_create_idx = True
-
-    _, tenant = TenantService.get_by_id(kb.tenant_id)
-    llm_bdl = LLMBundle(kb.tenant_id, LLMType.CHAT, tenant.llm_id)
-    for doc_id in docids:
-        cks = [c for c in docs if c["doc_id"] == doc_id]
-
-        vects = embedding(doc_id, [c["content_with_weight"] for c in cks])
-        assert len(cks) == len(vects)
-        for i, d in enumerate(cks):
-            v = vects[i]
-            d["q_%d_vec" % len(v)] = v
-        for b in range(0, len(cks), es_bulk_size):
-            if try_create_idx:
-                if not settings.docStoreConn.indexExist(idxnm, kb_id):
-                    settings.docStoreConn.createIdx(idxnm, kb_id, len(vects[0]))
-                try_create_idx = False
-            settings.docStoreConn.insert(cks[b : b + es_bulk_size], idxnm, kb_id)
-
-        DocumentService.increment_chunk_num(
-            doc_id, kb.id, token_counts[doc_id], chunk_counts[doc_id], 0
-        )
-
-    return [d["id"] for d, _ in files]

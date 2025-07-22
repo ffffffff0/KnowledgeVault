@@ -1,0 +1,122 @@
+@startuml dataTable
+skinparam dpi 800
+skinparam defaultFontSize 15
+skinparam defaultFontName "FiraCode-Retina"
+
+class knowledgebase {
+    ' Primary Key (PK) - Underlined and marked
+    + id : VARCHAR(32) {PK, NN}
+    --
+    ' Regular columns with data types and constraints
+    + create_time : BIGINT
+    + create_date : DATETIME
+    + update_time : BIGINT
+    + update_date : DATETIME
+    + user_id : VARCHAR(32) {NN}
+    + name : VARCHAR(128) {NN}
+    + language : VARCHAR(32)
+    + description : TEXT
+    + embd_id : VARCHAR(128) {NN}
+    + permission : VARCHAR(16) {NN}
+    + doc_num : INT {NN}
+    + chunk_num : INT {NN}
+    + parser_id : VARCHAR(32) {NN}
+    + parser_config : LONGTEXT {NN}
+    + status : VARCHAR(1)
+    + created_by : VARCHAR(32) {NN}
+}
+
+class tenant_llm {
+    ' Composite Primary Key (PK) - Underlined and marked
+    + tenant_id : VARCHAR(32) {PK, NN}
+    + llm_factory : VARCHAR(128) {PK, NN}
+    + llm_name : VARCHAR(128) {PK, NN}
+    --
+    ' Regular columns with data types and constraints
+    + create_time : BIGINT
+    + create_date : DATETIME
+    + update_time : BIGINT
+    + update_date : DATETIME
+    + model_type : VARCHAR(128)
+    + api_key : VARCHAR(2048)
+    + api_base : VARCHAR(255)
+    + max_tokens : INT {NN}
+    + used_tokens : INT {NN}
+}
+
+class file {
+    + id : VARCHAR(32) {PK, NN}
+    --
+    + create_time : BIGINT
+    + create_date : DATETIME
+    + update_time : BIGINT
+    + update_date : DATETIME
+    + parent_id : VARCHAR(32) {NN}
+    + user_id : VARCHAR(32) {NN}
+    + created_by : VARCHAR(32) {NN}
+    + name : VARCHAR(255) {NN}
+    + location : VARCHAR(255)
+    + size : INT {NN}
+    + type : VARCHAR(32) {NN}
+    + source_type : VARCHAR(128) {NN}
+}
+
+class document {
+    + id : VARCHAR(32) {PK, NN}
+    --
+    + create_time : BIGINT
+    + create_date : DATETIME
+    + update_time : BIGINT
+    + update_date : DATETIME
+    + kb_id : VARCHAR(256) {NN}
+    + parser_id : VARCHAR(32) {NN}
+    + parser_config : LONGTEXT {NN}
+    + source_type : VARCHAR(128) {NN}
+    + type : VARCHAR(32) {NN}
+    + created_by : VARCHAR(32) {NN}
+    + name : VARCHAR(255)
+    + location : VARCHAR(255)
+    + size : INT {NN}
+    + chunk_num : INT {NN}
+    + progress : FLOAT {NN}
+    + progress_msg : TEXT
+    + process_begin_at : DATETIME
+    + process_duration : FLOAT {NN}
+    + meta_fields : LONGTEXT
+    + run : VARCHAR(1)
+    + status : VARCHAR(1)
+}
+
+class file2document {
+    + id : VARCHAR(32) {PK, NN}
+    --
+    + create_time : BIGINT
+    + create_date : DATETIME
+    + update_time : BIGINT
+    + update_date : DATETIME
+    + file_id : VARCHAR(32)
+    + document_id : VARCHAR(32)
+}
+
+class task {
+    + id : VARCHAR(32) {PK, NN}
+    --
+    + create_time : BIGINT
+    + create_date : DATETIME
+    + update_time : BIGINT
+    + update_date : DATETIME
+    + doc_id : VARCHAR(32) {NN}
+    + from_page : INT {NN}
+    + to_page : INT {NN}
+    + task_type : VARCHAR(32) {NN}
+    + priority : INT {NN}
+    + begin_at : DATETIME
+    + process_duration : FLOAT {NN}
+    + progress : FLOAT {NN}
+    + progress_msg : TEXT
+    + retry_count : INT {NN}
+    + digest : TEXT
+    + chunk_ids : LONGTEXT
+}
+
+@enduml

@@ -1,6 +1,7 @@
 import os
 import json
 import secrets
+import logging
 from datetime import date
 from enum import Enum, IntEnum
 from api.constants import RAG_SERVICE_NAME
@@ -61,7 +62,6 @@ def get_or_create_secret_key():
         return configured_key
     
     # Generate a new secure key and warn about it
-    import logging
     new_key = secrets.token_hex(32)
     logging.warning(
         "SECURITY WARNING: Using auto-generated SECRET_KEY. "

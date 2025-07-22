@@ -1,18 +1,3 @@
-#
-#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
-#
-#  Licensed under the Apache License, Version 2.0 (the "License");
-#  you may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS,
-#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#  See the License for the specific language governing permissions and
-#  limitations under the License.
-#
 import asyncio
 import json
 import logging
@@ -50,7 +35,9 @@ ERROR_QUOTA = "QUOTA_EXCEEDED"
 ERROR_MAX_RETRIES = "MAX_RETRIES_EXCEEDED"
 ERROR_GENERIC = "GENERIC_ERROR"
 
-LENGTH_NOTIFICATION_CN = "······\n由于大模型的上下文窗口大小限制，回答已经被大模型截断。"
+LENGTH_NOTIFICATION_CN = (
+    "······\n由于大模型的上下文窗口大小限制，回答已经被大模型截断。"
+)
 LENGTH_NOTIFICATION_EN = "...\nThe answer is truncated by your chosen LLM due to its limitation on context length."
 
 
@@ -64,8 +51,12 @@ class Base(ABC):
         self.client = OpenAI(api_key=key, base_url=base_url, timeout=timeout)
         self.model_name = model_name
         # Configure retry parameters
-        self.max_retries = kwargs.get("max_retries", int(os.environ.get("LLM_MAX_RETRIES", 5)))
-        self.base_delay = kwargs.get("retry_interval", float(os.environ.get("LLM_BASE_DELAY", 2.0)))
+        self.max_retries = kwargs.get(
+            "max_retries", int(os.environ.get("LLM_MAX_RETRIES", 5))
+        )
+        self.base_delay = kwargs.get(
+            "retry_interval", float(os.environ.get("LLM_BASE_DELAY", 2.0))
+        )
         self.max_rounds = kwargs.get("max_rounds", 5)
         self.is_tools = False
         self.tools = []
@@ -79,23 +70,74 @@ class Base(ABC):
         """Classify error based on error message content"""
         error_str = str(error).lower()
 
-        if "rate limit" in error_str or "429" in error_str or "tpm limit" in error_str or "too many requests" in error_str or "requests per minute" in error_str:
+        if (
+            "rate limit" in error_str
+            or "429" in error_str
+            or "tpm limit" in error_str
+            or "too many requests" in error_str
+            or "requests per minute" in error_str
+        ):
             return ERROR_RATE_LIMIT
-        elif "auth" in error_str or "key" in error_str or "apikey" in error_str or "401" in error_str or "forbidden" in error_str or "permission" in error_str:
+        elif (
+            "auth" in error_str
+            or "key" in error_str
+            or "apikey" in error_str
+            or "401" in error_str
+            or "forbidden" in error_str
+            or "permission" in error_str
+        ):
             return ERROR_AUTHENTICATION
-        elif "invalid" in error_str or "bad request" in error_str or "400" in error_str or "format" in error_str or "malformed" in error_str or "parameter" in error_str:
+        elif (
+            "invalid" in error_str
+            or "bad request" in error_str
+            or "400" in error_str
+            or "format" in error_str
+            or "malformed" in error_str
+            or "parameter" in error_str
+        ):
             return ERROR_INVALID_REQUEST
-        elif "server" in error_str or "502" in error_str or "503" in error_str or "504" in error_str or "500" in error_str or "unavailable" in error_str:
+        elif (
+            "server" in error_str
+            or "502" in error_str
+            or "503" in error_str
+            or "504" in error_str
+            or "500" in error_str
+            or "unavailable" in error_str
+        ):
             return ERROR_SERVER
         elif "timeout" in error_str or "timed out" in error_str:
             return ERROR_TIMEOUT
-        elif "connect" in error_str or "network" in error_str or "unreachable" in error_str or "dns" in error_str:
+        elif (
+            "connect" in error_str
+            or "network" in error_str
+            or "unreachable" in error_str
+            or "dns" in error_str
+        ):
             return ERROR_CONNECTION
-        elif "quota" in error_str or "capacity" in error_str or "credit" in error_str or "billing" in error_str or "limit" in error_str and "rate" not in error_str:
+        elif (
+            "quota" in error_str
+            or "capacity" in error_str
+            or "credit" in error_str
+            or "billing" in error_str
+            or "limit" in error_str
+            and "rate" not in error_str
+        ):
             return ERROR_QUOTA
-        elif "filter" in error_str or "content" in error_str or "policy" in error_str or "blocked" in error_str or "safety" in error_str or "inappropriate" in error_str:
+        elif (
+            "filter" in error_str
+            or "content" in error_str
+            or "policy" in error_str
+            or "blocked" in error_str
+            or "safety" in error_str
+            or "inappropriate" in error_str
+        ):
             return ERROR_CONTENT_FILTER
-        elif "model" in error_str or "not found" in error_str or "does not exist" in error_str or "not available" in error_str:
+        elif (
+            "model" in error_str
+            or "not found" in error_str
+            or "does not exist" in error_str
+            or "not available" in error_str
+        ):
             return ERROR_MODEL
         else:
             return ERROR_GENERIC
@@ -106,9 +148,17 @@ class Base(ABC):
         return gen_conf
 
     def _chat(self, history, gen_conf):
-        response = self.client.chat.completions.create(model=self.model_name, messages=history, **gen_conf)
+        response = self.client.chat.completions.create(
+            model=self.model_name, messages=history, **gen_conf
+        )
 
-        if any([not response.choices, not response.choices[0].message, not response.choices[0].message.content]):
+        if any(
+            [
+                not response.choices,
+                not response.choices[0].message,
+                not response.choices[0].message.content,
+            ]
+        ):
             return "", 0
         ans = response.choices[0].message.content.strip()
         if response.choices[0].finish_reason == "length":
@@ -129,11 +179,15 @@ class Base(ABC):
         error_code = self._classify_error(e)
 
         # Check if it's a rate limit error or server error and not the last attempt
-        should_retry = (error_code == ERROR_RATE_LIMIT or error_code == ERROR_SERVER) and attempt < self.max_retries
+        should_retry = (
+            error_code == ERROR_RATE_LIMIT or error_code == ERROR_SERVER
+        ) and attempt < self.max_retries
 
         if should_retry:
             delay = self._get_delay()
-            logging.warning(f"Error: {error_code}. Retrying in {delay:.2f} seconds... (Attempt {attempt + 1}/{self.max_retries})")
+            logging.warning(
+                f"Error: {error_code}. Retrying in {delay:.2f} seconds... (Attempt {attempt + 1}/{self.max_retries})"
+            )
             time.sleep(delay)
         else:
             # For non-rate limit errors or the last attempt, return an error message
@@ -142,7 +196,15 @@ class Base(ABC):
             return f"{ERROR_PREFIX}: {error_code} - {str(e)}"
 
     def _verbose_tool_use(self, name, args, res):
-        return "<tool_call>" + json.dumps({"name": name, "args": args, "result": res}, ensure_ascii=False, indent=2) + "</tool_call>"
+        return (
+            "<tool_call>"
+            + json.dumps(
+                {"name": name, "args": args, "result": res},
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "</tool_call>"
+        )
 
     def _append_history(self, hist, tool_call, tool_res):
         hist.append(
@@ -165,7 +227,9 @@ class Base(ABC):
             if isinstance(tool_res, dict):
                 tool_res = json.dumps(tool_res, ensure_ascii=False)
         finally:
-            hist.append({"role": "tool", "tool_call_id": tool_call.id, "content": str(tool_res)})
+            hist.append(
+                {"role": "tool", "tool_call_id": tool_call.id, "content": str(tool_res)}
+            )
         return hist
 
     def bind_tools(self, toolcall_session, tools):
@@ -191,14 +255,31 @@ class Base(ABC):
             history = hist
             try:
                 for _ in range(self.max_rounds * 2):
-                    response = self.client.chat.completions.create(model=self.model_name, messages=history, tools=self.tools, **gen_conf)
+                    response = self.client.chat.completions.create(
+                        model=self.model_name,
+                        messages=history,
+                        tools=self.tools,
+                        **gen_conf,
+                    )
                     tk_count += self.total_token_count(response)
                     if any([not response.choices, not response.choices[0].message]):
-                        raise Exception(f"500 response structure error. Response: {response}")
+                        raise Exception(
+                            f"500 response structure error. Response: {response}"
+                        )
 
-                    if not hasattr(response.choices[0].message, "tool_calls") or not response.choices[0].message.tool_calls:
-                        if hasattr(response.choices[0].message, "reasoning_content") and response.choices[0].message.reasoning_content:
-                            ans += "<think>" + response.choices[0].message.reasoning_content + "</think>"
+                    if (
+                        not hasattr(response.choices[0].message, "tool_calls")
+                        or not response.choices[0].message.tool_calls
+                    ):
+                        if (
+                            hasattr(response.choices[0].message, "reasoning_content")
+                            and response.choices[0].message.reasoning_content
+                        ):
+                            ans += (
+                                "<think>"
+                                + response.choices[0].message.reasoning_content
+                                + "</think>"
+                            )
 
                         ans += response.choices[0].message.content
                         if response.choices[0].finish_reason == "length":
@@ -210,12 +291,25 @@ class Base(ABC):
                         name = tool_call.function.name
                         try:
                             args = json_repair.loads(tool_call.function.arguments)
-                            tool_response = self.toolcall_sessions[name].tool_call(name, args)
-                            history = self._append_history(history, tool_call, tool_response)
+                            tool_response = self.toolcall_sessions[name].tool_call(
+                                name, args
+                            )
+                            history = self._append_history(
+                                history, tool_call, tool_response
+                            )
                             ans += self._verbose_tool_use(name, args, tool_response)
                         except Exception as e:
-                            logging.exception(msg=f"Wrong JSON argument format in LLM tool call response: {tool_call}")
-                            history.append({"role": "tool", "tool_call_id": tool_call.id, "content": f"Tool call error: \n{tool_call}\nException:\n" + str(e)})
+                            logging.exception(
+                                msg=f"Wrong JSON argument format in LLM tool call response: {tool_call}"
+                            )
+                            history.append(
+                                {
+                                    "role": "tool",
+                                    "tool_call_id": tool_call.id,
+                                    "content": f"Tool call error: \n{tool_call}\nException:\n"
+                                    + str(e),
+                                }
+                            )
                             ans += self._verbose_tool_use(name, {}, str(e))
 
             except Exception as e:
@@ -249,7 +343,9 @@ class Base(ABC):
                 if index not in final_tool_calls:
                     final_tool_calls[index] = tool_call
 
-                final_tool_calls[index].function.arguments += tool_call.function.arguments
+                final_tool_calls[
+                    index
+                ].function.arguments += tool_call.function.arguments
 
         return final_tool_calls
 
@@ -267,7 +363,13 @@ class Base(ABC):
             try:
                 for _ in range(self.max_rounds * 2):
                     reasoning_start = False
-                    response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, tools=tools, **gen_conf)
+                    response = self.client.chat.completions.create(
+                        model=self.model_name,
+                        messages=history,
+                        stream=True,
+                        tools=tools,
+                        **gen_conf,
+                    )
                     final_tool_calls = {}
                     answer = ""
                     for resp in response:
@@ -280,16 +382,29 @@ class Base(ABC):
                                         tool_call.function.arguments = ""
                                     final_tool_calls[index] = tool_call
                                 else:
-                                    final_tool_calls[index].function.arguments += tool_call.function.arguments if tool_call.function.arguments else ""
+                                    final_tool_calls[index].function.arguments += (
+                                        tool_call.function.arguments
+                                        if tool_call.function.arguments
+                                        else ""
+                                    )
                             continue
 
-                        if any([not resp.choices, not resp.choices[0].delta, not hasattr(resp.choices[0].delta, "content")]):
+                        if any(
+                            [
+                                not resp.choices,
+                                not resp.choices[0].delta,
+                                not hasattr(resp.choices[0].delta, "content"),
+                            ]
+                        ):
                             raise Exception("500 response structure error.")
 
                         if not resp.choices[0].delta.content:
                             resp.choices[0].delta.content = ""
 
-                        if hasattr(resp.choices[0].delta, "reasoning_content") and resp.choices[0].delta.reasoning_content:
+                        if (
+                            hasattr(resp.choices[0].delta, "reasoning_content")
+                            and resp.choices[0].delta.reasoning_content
+                        ):
                             ans = ""
                             if not reasoning_start:
                                 reasoning_start = True
@@ -303,11 +418,17 @@ class Base(ABC):
 
                         tol = self.total_token_count(resp)
                         if not tol:
-                            total_tokens += num_tokens_from_string(resp.choices[0].delta.content)
+                            total_tokens += num_tokens_from_string(
+                                resp.choices[0].delta.content
+                            )
                         else:
                             total_tokens += tol
 
-                        finish_reason = resp.choices[0].finish_reason if hasattr(resp.choices[0], "finish_reason") else ""
+                        finish_reason = (
+                            resp.choices[0].finish_reason
+                            if hasattr(resp.choices[0], "finish_reason")
+                            else ""
+                        )
                         if finish_reason == "length":
                             yield self._length_stop("")
 
@@ -319,12 +440,25 @@ class Base(ABC):
                         name = tool_call.function.name
                         try:
                             args = json_repair.loads(tool_call.function.arguments)
-                            tool_response = self.toolcall_session[name].tool_call(name, args)
-                            history = self._append_history(history, tool_call, tool_response)
+                            tool_response = self.toolcall_session[name].tool_call(
+                                name, args
+                            )
+                            history = self._append_history(
+                                history, tool_call, tool_response
+                            )
                             yield self._verbose_tool_use(name, args, tool_response)
                         except Exception as e:
-                            logging.exception(msg=f"Wrong JSON argument format in LLM tool call response: {tool_call}")
-                            history.append({"role": "tool", "tool_call_id": tool_call.id, "content": f"Tool call error: \n{tool_call}\nException:\n" + str(e)})
+                            logging.exception(
+                                msg=f"Wrong JSON argument format in LLM tool call response: {tool_call}"
+                            )
+                            history.append(
+                                {
+                                    "role": "tool",
+                                    "tool_call_id": tool_call.id,
+                                    "content": f"Tool call error: \n{tool_call}\nException:\n"
+                                    + str(e),
+                                }
+                            )
                             yield self._verbose_tool_use(name, {}, str(e))
 
             except Exception as e:
@@ -343,13 +477,18 @@ class Base(ABC):
         total_tokens = 0
         reasoning_start = False
         try:
-            response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, **gen_conf)
+            response = self.client.chat.completions.create(
+                model=self.model_name, messages=history, stream=True, **gen_conf
+            )
             for resp in response:
                 if not resp.choices:
                     continue
                 if not resp.choices[0].delta.content:
                     resp.choices[0].delta.content = ""
-                if hasattr(resp.choices[0].delta, "reasoning_content") and resp.choices[0].delta.reasoning_content:
+                if (
+                    hasattr(resp.choices[0].delta, "reasoning_content")
+                    and resp.choices[0].delta.reasoning_content
+                ):
                     ans = ""
                     if not reasoning_start:
                         reasoning_start = True
@@ -361,7 +500,9 @@ class Base(ABC):
 
                 tol = self.total_token_count(resp)
                 if not tol:
-                    total_tokens += num_tokens_from_string(resp.choices[0].delta.content)
+                    total_tokens += num_tokens_from_string(
+                        resp.choices[0].delta.content
+                    )
                 else:
                     total_tokens += tol
 
@@ -428,7 +569,13 @@ class Base(ABC):
 class GptTurbo(Base):
     _FACTORY_NAME = "OpenAI"
 
-    def __init__(self, key, model_name="gpt-3.5-turbo", base_url="https://api.openai.com/v1", **kwargs):
+    def __init__(
+        self,
+        key,
+        model_name="gpt-3.5-turbo",
+        base_url="https://api.openai.com/v1",
+        **kwargs,
+    ):
         if not base_url:
             base_url = "https://api.openai.com/v1"
         super().__init__(key, model_name, base_url, **kwargs)
@@ -437,7 +584,13 @@ class GptTurbo(Base):
 class MoonshotChat(Base):
     _FACTORY_NAME = "Moonshot"
 
-    def __init__(self, key, model_name="moonshot-v1-8k", base_url="https://api.moonshot.cn/v1", **kwargs):
+    def __init__(
+        self,
+        key,
+        model_name="moonshot-v1-8k",
+        base_url="https://api.moonshot.cn/v1",
+        **kwargs,
+    ):
         if not base_url:
             base_url = "https://api.moonshot.cn/v1"
         super().__init__(key, model_name, base_url)
@@ -476,7 +629,13 @@ class ModelScopeChat(Base):
 class DeepSeekChat(Base):
     _FACTORY_NAME = "DeepSeek"
 
-    def __init__(self, key, model_name="deepseek-chat", base_url="https://api.deepseek.com/v1", **kwargs):
+    def __init__(
+        self,
+        key,
+        model_name="deepseek-chat",
+        base_url="https://api.deepseek.com/v1",
+        **kwargs,
+    ):
         if not base_url:
             base_url = "https://api.deepseek.com/v1"
         super().__init__(key, model_name, base_url, **kwargs)
@@ -489,14 +648,22 @@ class AzureChat(Base):
         api_key = json.loads(key).get("api_key", "")
         api_version = json.loads(key).get("api_version", "2024-02-01")
         super().__init__(key, model_name, base_url, **kwargs)
-        self.client = AzureOpenAI(api_key=api_key, azure_endpoint=base_url, api_version=api_version)
+        self.client = AzureOpenAI(
+            api_key=api_key, azure_endpoint=base_url, api_version=api_version
+        )
         self.model_name = model_name
 
 
 class BaiChuanChat(Base):
     _FACTORY_NAME = "BaiChuan"
 
-    def __init__(self, key, model_name="Baichuan3-Turbo", base_url="https://api.baichuan-ai.com/v1", **kwargs):
+    def __init__(
+        self,
+        key,
+        model_name="Baichuan3-Turbo",
+        base_url="https://api.baichuan-ai.com/v1",
+        **kwargs,
+    ):
         if not base_url:
             base_url = "https://api.baichuan-ai.com/v1"
         super().__init__(key, model_name, base_url, **kwargs)
@@ -518,7 +685,17 @@ class BaiChuanChat(Base):
         response = self.client.chat.completions.create(
             model=self.model_name,
             messages=history,
-            extra_body={"tools": [{"type": "web_search", "web_search": {"enable": True, "search_mode": "performance_first"}}]},
+            extra_body={
+                "tools": [
+                    {
+                        "type": "web_search",
+                        "web_search": {
+                            "enable": True,
+                            "search_mode": "performance_first",
+                        },
+                    }
+                ]
+            },
             **gen_conf,
         )
         ans = response.choices[0].message.content.strip()
@@ -540,7 +717,17 @@ class BaiChuanChat(Base):
             response = self.client.chat.completions.create(
                 model=self.model_name,
                 messages=history,
-                extra_body={"tools": [{"type": "web_search", "web_search": {"enable": True, "search_mode": "performance_first"}}]},
+                extra_body={
+                    "tools": [
+                        {
+                            "type": "web_search",
+                            "web_search": {
+                                "enable": True,
+                                "search_mode": "performance_first",
+                            },
+                        }
+                    ]
+                },
                 stream=True,
                 **self._format_params(gen_conf),
             )
@@ -552,7 +739,9 @@ class BaiChuanChat(Base):
                 ans = resp.choices[0].delta.content
                 tol = self.total_token_count(resp)
                 if not tol:
-                    total_tokens += num_tokens_from_string(resp.choices[0].delta.content)
+                    total_tokens += num_tokens_from_string(
+                        resp.choices[0].delta.content
+                    )
                 else:
                     total_tokens = tol
                 if resp.choices[0].finish_reason == "length":
@@ -571,7 +760,9 @@ class BaiChuanChat(Base):
 class QWenChat(Base):
     _FACTORY_NAME = "Tongyi-Qianwen"
 
-    def __init__(self, key, model_name=Generation.Models.qwen_turbo, base_url=None, **kwargs):
+    def __init__(
+        self, key, model_name=Generation.Models.qwen_turbo, base_url=None, **kwargs
+    ):
         if not base_url:
             base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
         super().__init__(key, model_name, base_url=base_url, **kwargs)
@@ -616,7 +807,9 @@ class ZhipuChat(Base):
         ans = ""
         tk_count = 0
         try:
-            response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, **gen_conf)
+            response = self.client.chat.completions.create(
+                model=self.model_name, messages=history, stream=True, **gen_conf
+            )
             for resp in response:
                 if not resp.choices[0].delta.content:
                     continue
@@ -651,7 +844,11 @@ class OllamaChat(Base):
     def __init__(self, key, model_name, base_url=None, **kwargs):
         super().__init__(key, model_name, base_url=base_url, **kwargs)
 
-        self.client = Client(host=base_url) if not key or key == "x" else Client(host=base_url, headers={"Authorization": f"Bearer {key}"})
+        self.client = (
+            Client(host=base_url)
+            if not key or key == "x"
+            else Client(host=base_url, headers={"Authorization": f"Bearer {key}"})
+        )
         self.model_name = model_name
 
     def _clean_conf(self, gen_conf):
@@ -669,9 +866,13 @@ class OllamaChat(Base):
         ctx_size = self._calculate_dynamic_ctx(history)
 
         gen_conf["num_ctx"] = ctx_size
-        response = self.client.chat(model=self.model_name, messages=history, options=gen_conf, keep_alive=-1)
+        response = self.client.chat(
+            model=self.model_name, messages=history, options=gen_conf, keep_alive=-1
+        )
         ans = response["message"]["content"].strip()
-        token_count = response.get("eval_count", 0) + response.get("prompt_eval_count", 0)
+        token_count = response.get("eval_count", 0) + response.get(
+            "prompt_eval_count", 0
+        )
         return ans, token_count
 
     def chat_streamly(self, system, history, gen_conf):
@@ -696,10 +897,18 @@ class OllamaChat(Base):
 
             ans = ""
             try:
-                response = self.client.chat(model=self.model_name, messages=history, stream=True, options=options, keep_alive=-1)
+                response = self.client.chat(
+                    model=self.model_name,
+                    messages=history,
+                    stream=True,
+                    options=options,
+                    keep_alive=-1,
+                )
                 for resp in response:
                     if resp["done"]:
-                        token_count = resp.get("prompt_eval_count", 0) + resp.get("eval_count", 0)
+                        token_count = resp.get("prompt_eval_count", 0) + resp.get(
+                            "eval_count", 0
+                        )
                         yield token_count
                     ans = resp["message"]["content"]
                     yield ans
@@ -743,7 +952,9 @@ class LocalLLM(Base):
 
         answer = ""
         try:
-            res = self.client.stream_doc(on=endpoint, inputs=prompt, return_type=Generation)
+            res = self.client.stream_doc(
+                on=endpoint, inputs=prompt, return_type=Generation
+            )
             loop = asyncio.get_event_loop()
             try:
                 while True:
@@ -774,7 +985,13 @@ class LocalLLM(Base):
 class VolcEngineChat(Base):
     _FACTORY_NAME = "VolcEngine"
 
-    def __init__(self, key, model_name, base_url="https://ark.cn-beijing.volces.com/api/v3", **kwargs):
+    def __init__(
+        self,
+        key,
+        model_name,
+        base_url="https://ark.cn-beijing.volces.com/api/v3",
+        **kwargs,
+    ):
         """
         Since do not want to modify the original database fields, and the VolcEngine authentication method is quite special,
         Assemble ark_api_key, ep_id into api_key, store it as a dictionary type, and parse it for use
@@ -782,14 +999,22 @@ class VolcEngineChat(Base):
         """
         base_url = base_url if base_url else "https://ark.cn-beijing.volces.com/api/v3"
         ark_api_key = json.loads(key).get("ark_api_key", "")
-        model_name = json.loads(key).get("ep_id", "") + json.loads(key).get("endpoint_id", "")
+        model_name = json.loads(key).get("ep_id", "") + json.loads(key).get(
+            "endpoint_id", ""
+        )
         super().__init__(ark_api_key, model_name, base_url, **kwargs)
 
 
 class MiniMaxChat(Base):
     _FACTORY_NAME = "MiniMax"
 
-    def __init__(self, key, model_name, base_url="https://api.minimax.chat/v1/text/chatcompletion_v2", **kwargs):
+    def __init__(
+        self,
+        key,
+        model_name,
+        base_url="https://api.minimax.chat/v1/text/chatcompletion_v2",
+        **kwargs,
+    ):
         super().__init__(key, model_name, base_url=base_url, **kwargs)
 
         if not base_url:
@@ -809,8 +1034,12 @@ class MiniMaxChat(Base):
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
         }
-        payload = json.dumps({"model": self.model_name, "messages": history, **gen_conf})
-        response = requests.request("POST", url=self.base_url, headers=headers, data=payload)
+        payload = json.dumps(
+            {"model": self.model_name, "messages": history, **gen_conf}
+        )
+        response = requests.request(
+            "POST", url=self.base_url, headers=headers, data=payload
+        )
         response = response.json()
         ans = response["choices"][0]["message"]["content"].strip()
         if response["choices"][0]["finish_reason"] == "length":
@@ -902,7 +1131,9 @@ class MistralChat(Base):
         ans = ""
         total_tokens = 0
         try:
-            response = self.client.chat_stream(model=self.model_name, messages=history, **gen_conf)
+            response = self.client.chat_stream(
+                model=self.model_name, messages=history, **gen_conf
+            )
             for resp in response:
                 if not resp.choices or not resp.choices[0].delta.content:
                     continue
@@ -938,7 +1169,12 @@ class BedrockChat(Base):
             # Try to create a client using the default credentials (AWS_PROFILE, AWS_DEFAULT_REGION, etc.)
             self.client = boto3.client("bedrock-runtime")
         else:
-            self.client = boto3.client(service_name="bedrock-runtime", region_name=self.bedrock_region, aws_access_key_id=self.bedrock_ak, aws_secret_access_key=self.bedrock_sk)
+            self.client = boto3.client(
+                service_name="bedrock-runtime",
+                region_name=self.bedrock_region,
+                aws_access_key_id=self.bedrock_ak,
+                aws_secret_access_key=self.bedrock_sk,
+            )
 
     def _clean_conf(self, gen_conf):
         for k in list(gen_conf.keys()):
@@ -947,13 +1183,17 @@ class BedrockChat(Base):
         return gen_conf
 
     def _chat(self, history, gen_conf):
-        system = history[0]["content"] if history and history[0]["role"] == "system" else ""
+        system = (
+            history[0]["content"] if history and history[0]["role"] == "system" else ""
+        )
         hist = []
         for item in history:
             if item["role"] == "system":
                 continue
             hist.append(deepcopy(item))
-            if not isinstance(hist[-1]["content"], list) and not isinstance(hist[-1]["content"], tuple):
+            if not isinstance(hist[-1]["content"], list) and not isinstance(
+                hist[-1]["content"], tuple
+            ):
                 hist[-1]["content"] = [{"text": hist[-1]["content"]}]
         # Send the message to the model, using a basic inference configuration.
         response = self.client.converse(
@@ -974,12 +1214,21 @@ class BedrockChat(Base):
             if k not in ["temperature"]:
                 del gen_conf[k]
         for item in history:
-            if not isinstance(item["content"], list) and not isinstance(item["content"], tuple):
+            if not isinstance(item["content"], list) and not isinstance(
+                item["content"], tuple
+            ):
                 item["content"] = [{"text": item["content"]}]
 
         if self.model_name.split(".")[0] == "ai21":
             try:
-                response = self.client.converse(modelId=self.model_name, messages=history, inferenceConfig=gen_conf, system=[{"text": (system if system else "Answer the user's message.")}])
+                response = self.client.converse(
+                    modelId=self.model_name,
+                    messages=history,
+                    inferenceConfig=gen_conf,
+                    system=[
+                        {"text": (system if system else "Answer the user's message.")}
+                    ],
+                )
                 ans = response["output"]["message"]["content"][0]["text"]
                 return ans, num_tokens_from_string(ans)
 
@@ -990,7 +1239,10 @@ class BedrockChat(Base):
         try:
             # Send the message to the model, using a basic inference configuration.
             streaming_response = self.client.converse_stream(
-                modelId=self.model_name, messages=history, inferenceConfig=gen_conf, system=[{"text": (system if system else "Answer the user's message.")}]
+                modelId=self.model_name,
+                messages=history,
+                inferenceConfig=gen_conf,
+                system=[{"text": (system if system else "Answer the user's message.")}],
             )
 
             # Extract and print the streamed response text in real-time.
@@ -1028,7 +1280,9 @@ class GeminiChat(Base):
     def _chat(self, history, gen_conf):
         from google.generativeai.types import content_types
 
-        system = history[0]["content"] if history and history[0]["role"] == "system" else ""
+        system = (
+            history[0]["content"] if history and history[0]["role"] == "system" else ""
+        )
         hist = []
         for item in history:
             if item["role"] == "system":
@@ -1061,7 +1315,9 @@ class GeminiChat(Base):
                 item["parts"] = item.pop("content")
         ans = ""
         try:
-            response = self.model.generate_content(history, generation_config=gen_conf, stream=True)
+            response = self.model.generate_content(
+                history, generation_config=gen_conf, stream=True
+            )
             for resp in response:
                 ans = resp.text
                 yield ans
@@ -1099,7 +1355,9 @@ class GroqChat(Base):
         ans = ""
         total_tokens = 0
         try:
-            response = self.client.chat.completions.create(model=self.model_name, messages=history, stream=True, **gen_conf)
+            response = self.client.chat.completions.create(
+                model=self.model_name, messages=history, stream=True, **gen_conf
+            )
             for resp in response:
                 if not resp.choices or not resp.choices[0].delta.content:
                     continue
@@ -1122,7 +1380,9 @@ class GroqChat(Base):
 class OpenRouterChat(Base):
     _FACTORY_NAME = "OpenRouter"
 
-    def __init__(self, key, model_name, base_url="https://openrouter.ai/api/v1", **kwargs):
+    def __init__(
+        self, key, model_name, base_url="https://openrouter.ai/api/v1", **kwargs
+    ):
         if not base_url:
             base_url = "https://openrouter.ai/api/v1"
         super().__init__(key, model_name, base_url, **kwargs)
@@ -1131,7 +1391,9 @@ class OpenRouterChat(Base):
 class StepFunChat(Base):
     _FACTORY_NAME = "StepFun"
 
-    def __init__(self, key, model_name, base_url="https://api.stepfun.com/v1", **kwargs):
+    def __init__(
+        self, key, model_name, base_url="https://api.stepfun.com/v1", **kwargs
+    ):
         if not base_url:
             base_url = "https://api.stepfun.com/v1"
         super().__init__(key, model_name, base_url, **kwargs)
@@ -1140,7 +1402,9 @@ class StepFunChat(Base):
 class NvidiaChat(Base):
     _FACTORY_NAME = "NVIDIA"
 
-    def __init__(self, key, model_name, base_url="https://integrate.api.nvidia.com/v1", **kwargs):
+    def __init__(
+        self, key, model_name, base_url="https://integrate.api.nvidia.com/v1", **kwargs
+    ):
         if not base_url:
             base_url = "https://integrate.api.nvidia.com/v1"
         super().__init__(key, model_name, base_url, **kwargs)
@@ -1171,7 +1435,9 @@ class OpenAI_APIChat(Base):
 class PPIOChat(Base):
     _FACTORY_NAME = "PPIO"
 
-    def __init__(self, key, model_name, base_url="https://api.ppinfra.com/v3/openai", **kwargs):
+    def __init__(
+        self, key, model_name, base_url="https://api.ppinfra.com/v3/openai", **kwargs
+    ):
         if not base_url:
             base_url = "https://api.ppinfra.com/v3/openai"
         super().__init__(key, model_name, base_url, **kwargs)
@@ -1209,10 +1475,16 @@ class CoHereChat(Base):
             if "content" in item:
                 item["message"] = item.pop("content")
         mes = hist.pop()["message"]
-        response = self.client.chat(model=self.model_name, chat_history=hist, message=mes, **gen_conf)
+        response = self.client.chat(
+            model=self.model_name, chat_history=hist, message=mes, **gen_conf
+        )
         ans = response.text
         if response.finish_reason == "MAX_TOKENS":
-            ans += "...\nFor the content length reason, it stopped, continue?" if is_english([ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
+            ans += (
+                "...\nFor the content length reason, it stopped, continue?"
+                if is_english([ans])
+                else "······\n由于长度的原因，回答被截断了，要继续吗？"
+            )
         return (
             ans,
             response.meta.tokens.input_tokens + response.meta.tokens.output_tokens,
@@ -1238,14 +1510,20 @@ class CoHereChat(Base):
         ans = ""
         total_tokens = 0
         try:
-            response = self.client.chat_stream(model=self.model_name, chat_history=history, message=mes, **gen_conf)
+            response = self.client.chat_stream(
+                model=self.model_name, chat_history=history, message=mes, **gen_conf
+            )
             for resp in response:
                 if resp.event_type == "text-generation":
                     ans = resp.text
                     total_tokens += num_tokens_from_string(resp.text)
                 elif resp.event_type == "stream-end":
                     if resp.finish_reason == "MAX_TOKENS":
-                        ans += "...\nFor the content length reason, it stopped, continue?" if is_english([ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
+                        ans += (
+                            "...\nFor the content length reason, it stopped, continue?"
+                            if is_english([ans])
+                            else "······\n由于长度的原因，回答被截断了，要继续吗？"
+                        )
                 yield ans
 
         except Exception as e:
@@ -1266,7 +1544,9 @@ class LeptonAIChat(Base):
 class TogetherAIChat(Base):
     _FACTORY_NAME = "TogetherAI"
 
-    def __init__(self, key, model_name, base_url="https://api.together.xyz/v1", **kwargs):
+    def __init__(
+        self, key, model_name, base_url="https://api.together.xyz/v1", **kwargs
+    ):
         if not base_url:
             base_url = "https://api.together.xyz/v1"
         super().__init__(key, model_name, base_url, **kwargs)
@@ -1275,7 +1555,9 @@ class TogetherAIChat(Base):
 class PerfXCloudChat(Base):
     _FACTORY_NAME = "PerfXCloud"
 
-    def __init__(self, key, model_name, base_url="https://cloud.perfxlab.cn/v1", **kwargs):
+    def __init__(
+        self, key, model_name, base_url="https://cloud.perfxlab.cn/v1", **kwargs
+    ):
         if not base_url:
             base_url = "https://cloud.perfxlab.cn/v1"
         super().__init__(key, model_name, base_url, **kwargs)
@@ -1284,7 +1566,9 @@ class PerfXCloudChat(Base):
 class UpstageChat(Base):
     _FACTORY_NAME = "Upstage"
 
-    def __init__(self, key, model_name, base_url="https://api.upstage.ai/v1/solar", **kwargs):
+    def __init__(
+        self, key, model_name, base_url="https://api.upstage.ai/v1/solar", **kwargs
+    ):
         if not base_url:
             base_url = "https://api.upstage.ai/v1/solar"
         super().__init__(key, model_name, base_url, **kwargs)
@@ -1293,7 +1577,9 @@ class UpstageChat(Base):
 class NovitaAIChat(Base):
     _FACTORY_NAME = "NovitaAI"
 
-    def __init__(self, key, model_name, base_url="https://api.novita.ai/v3/openai", **kwargs):
+    def __init__(
+        self, key, model_name, base_url="https://api.novita.ai/v3/openai", **kwargs
+    ):
         if not base_url:
             base_url = "https://api.novita.ai/v3/openai"
         super().__init__(key, model_name, base_url, **kwargs)
@@ -1302,7 +1588,9 @@ class NovitaAIChat(Base):
 class SILICONFLOWChat(Base):
     _FACTORY_NAME = "SILICONFLOW"
 
-    def __init__(self, key, model_name, base_url="https://api.siliconflow.cn/v1", **kwargs):
+    def __init__(
+        self, key, model_name, base_url="https://api.siliconflow.cn/v1", **kwargs
+    ):
         if not base_url:
             base_url = "https://api.siliconflow.cn/v1"
         super().__init__(key, model_name, base_url, **kwargs)
@@ -1311,7 +1599,9 @@ class SILICONFLOWChat(Base):
 class YiChat(Base):
     _FACTORY_NAME = "01.AI"
 
-    def __init__(self, key, model_name, base_url="https://api.lingyiwanwu.com/v1", **kwargs):
+    def __init__(
+        self, key, model_name, base_url="https://api.lingyiwanwu.com/v1", **kwargs
+    ):
         if not base_url:
             base_url = "https://api.lingyiwanwu.com/v1"
         super().__init__(key, model_name, base_url, **kwargs)
@@ -1338,8 +1628,16 @@ class ReplicateChat(Base):
         self.client = Client(api_token=key)
 
     def _chat(self, history, gen_conf):
-        system = history[0]["content"] if history and history[0]["role"] == "system" else ""
-        prompt = "\n".join([item["role"] + ":" + item["content"] for item in history[-5:] if item["role"] != "system"])
+        system = (
+            history[0]["content"] if history and history[0]["role"] == "system" else ""
+        )
+        prompt = "\n".join(
+            [
+                item["role"] + ":" + item["content"]
+                for item in history[-5:]
+                if item["role"] != "system"
+            ]
+        )
         response = self.client.run(
             self.model_name,
             input={"system_prompt": system, "prompt": prompt, **gen_conf},
@@ -1350,7 +1648,9 @@ class ReplicateChat(Base):
     def chat_streamly(self, system, history, gen_conf):
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
-        prompt = "\n".join([item["role"] + ":" + item["content"] for item in history[-5:]])
+        prompt = "\n".join(
+            [item["role"] + ":" + item["content"] for item in history[-5:]]
+        )
         ans = ""
         try:
             response = self.client.run(
@@ -1448,7 +1748,9 @@ class HunyuanChat(Base):
 class SparkChat(Base):
     _FACTORY_NAME = "XunFei Spark"
 
-    def __init__(self, key, model_name, base_url="https://spark-api-open.xf-yun.com/v1", **kwargs):
+    def __init__(
+        self, key, model_name, base_url="https://spark-api-open.xf-yun.com/v1", **kwargs
+    ):
         if not base_url:
             base_url = "https://spark-api-open.xf-yun.com/v1"
         model2version = {
@@ -1459,7 +1761,9 @@ class SparkChat(Base):
             "Spark-4.0-Ultra": "4.0Ultra",
         }
         version2model = {v: k for k, v in model2version.items()}
-        assert model_name in model2version or model_name in version2model, f"The given model name is not supported yet. Support: {list(model2version.keys())}"
+        assert (
+            model_name in model2version or model_name in version2model
+        ), f"The given model name is not supported yet. Support: {list(model2version.keys())}"
         if model_name in model2version:
             model_version = model2version[model_name]
         else:
@@ -1482,26 +1786,45 @@ class BaiduYiyanChat(Base):
         self.model_name = model_name.lower()
 
     def _clean_conf(self, gen_conf):
-        gen_conf["penalty_score"] = ((gen_conf.get("presence_penalty", 0) + gen_conf.get("frequency_penalty", 0)) / 2) + 1
+        gen_conf["penalty_score"] = (
+            (gen_conf.get("presence_penalty", 0) + gen_conf.get("frequency_penalty", 0))
+            / 2
+        ) + 1
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
         return gen_conf
 
     def _chat(self, history, gen_conf):
-        system = history[0]["content"] if history and history[0]["role"] == "system" else ""
-        response = self.client.do(model=self.model_name, messages=[h for h in history if h["role"] != "system"], system=system, **gen_conf).body
+        system = (
+            history[0]["content"] if history and history[0]["role"] == "system" else ""
+        )
+        response = self.client.do(
+            model=self.model_name,
+            messages=[h for h in history if h["role"] != "system"],
+            system=system,
+            **gen_conf,
+        ).body
         ans = response["result"]
         return ans, self.total_token_count(response)
 
     def chat_streamly(self, system, history, gen_conf):
-        gen_conf["penalty_score"] = ((gen_conf.get("presence_penalty", 0) + gen_conf.get("frequency_penalty", 0)) / 2) + 1
+        gen_conf["penalty_score"] = (
+            (gen_conf.get("presence_penalty", 0) + gen_conf.get("frequency_penalty", 0))
+            / 2
+        ) + 1
         if "max_tokens" in gen_conf:
             del gen_conf["max_tokens"]
         ans = ""
         total_tokens = 0
 
         try:
-            response = self.client.do(model=self.model_name, messages=history, system=system, stream=True, **gen_conf)
+            response = self.client.do(
+                model=self.model_name,
+                messages=history,
+                system=system,
+                stream=True,
+                **gen_conf,
+            )
             for resp in response:
                 resp = resp.body
                 ans = resp["result"]
@@ -1518,7 +1841,9 @@ class BaiduYiyanChat(Base):
 class AnthropicChat(Base):
     _FACTORY_NAME = "Anthropic"
 
-    def __init__(self, key, model_name, base_url="https://api.anthropic.com/v1/", **kwargs):
+    def __init__(
+        self, key, model_name, base_url="https://api.anthropic.com/v1/", **kwargs
+    ):
         if not base_url:
             base_url = "https://api.anthropic.com/v1/"
         super().__init__(key, model_name, base_url=base_url, **kwargs)
@@ -1535,7 +1860,9 @@ class GoogleChat(Base):
         from google.oauth2 import service_account
 
         key = json.loads(key)
-        access_token = json.loads(base64.b64decode(key.get("google_service_account_key", "")))
+        access_token = json.loads(
+            base64.b64decode(key.get("google_service_account_key", ""))
+        )
         project_id = key.get("google_project_id", "")
         region = key.get("google_region", "")
 
@@ -1547,11 +1874,15 @@ class GoogleChat(Base):
             from google.auth.transport.requests import Request
 
             if access_token:
-                credits = service_account.Credentials.from_service_account_info(access_token, scopes=scopes)
+                credits = service_account.Credentials.from_service_account_info(
+                    access_token, scopes=scopes
+                )
                 request = Request()
                 credits.refresh(request)
                 token = credits.token
-                self.client = AnthropicVertex(region=region, project_id=project_id, access_token=token)
+                self.client = AnthropicVertex(
+                    region=region, project_id=project_id, access_token=token
+                )
             else:
                 self.client = AnthropicVertex(region=region, project_id=project_id)
         else:
@@ -1559,8 +1890,12 @@ class GoogleChat(Base):
             from google.cloud import aiplatform
 
             if access_token:
-                credits = service_account.Credentials.from_service_account_info(access_token)
-                aiplatform.init(credentials=credits, project=project_id, location=region)
+                credits = service_account.Credentials.from_service_account_info(
+                    access_token
+                )
+                aiplatform.init(
+                    credentials=credits, project=project_id, location=region
+                )
             else:
                 aiplatform.init(project=project_id, location=region)
             self.client = glm.GenerativeModel(model_name=self.model_name)
@@ -1578,7 +1913,9 @@ class GoogleChat(Base):
         return gen_conf
 
     def _chat(self, history, gen_conf):
-        system = history[0]["content"] if history and history[0]["role"] == "system" else ""
+        system = (
+            history[0]["content"] if history and history[0]["role"] == "system" else ""
+        )
         if "claude" in self.model_name:
             response = self.client.messages.create(
                 model=self.model_name,
@@ -1589,7 +1926,11 @@ class GoogleChat(Base):
             ).json()
             ans = response["content"][0]["text"]
             if response["stop_reason"] == "max_tokens":
-                ans += "...\nFor the content length reason, it stopped, continue?" if is_english([ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
+                ans += (
+                    "...\nFor the content length reason, it stopped, continue?"
+                    if is_english([ans])
+                    else "······\n由于长度的原因，回答被截断了，要继续吗？"
+                )
             return (
                 ans,
                 response["usage"]["input_tokens"] + response["usage"]["output_tokens"],
@@ -1653,7 +1994,9 @@ class GoogleChat(Base):
                     item["parts"] = item.pop("content")
             ans = ""
             try:
-                response = self.model.generate_content(history, generation_config=gen_conf, stream=True)
+                response = self.model.generate_content(
+                    history, generation_config=gen_conf, stream=True
+                )
                 for resp in response:
                     ans = resp.text
                     yield ans

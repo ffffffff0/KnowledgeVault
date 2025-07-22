@@ -1,18 +1,3 @@
-#
-#  Copyright 2024 The InfiniFlow Authors. All Rights Reserved.
-#
-#  Licensed under the Apache License, Version 2.0 (the "License");
-#  you may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS,
-#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#  See the License for the specific language governing permissions and
-#  limitations under the License.
-#
 import hashlib
 import inspect
 import logging
@@ -24,8 +9,6 @@ import typing
 from enum import Enum
 from functools import wraps
 
-from flask_login import UserMixin
-from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
 from peewee import (
     BigIntegerField, 
     BooleanField, 
@@ -464,35 +447,6 @@ def fill_db_model_object(model_object, human_model_dict):
     return model_object
 
 
-class User(DataBaseModel, UserMixin):
-    id = CharField(max_length=32, primary_key=True)
-    access_token = CharField(max_length=255, null=True, index=True)
-    nickname = CharField(max_length=100, null=False, help_text="nicky name", index=True)
-    password = CharField(max_length=255, null=True, help_text="password", index=True)
-    email = CharField(max_length=255, null=False, help_text="email", index=True)
-    avatar = TextField(null=True, help_text="avatar base64 string")
-    language = CharField(max_length=32, null=True, help_text="English|Chinese", default="Chinese" if "zh_CN" in os.getenv("LANG", "") else "English", index=True)
-    color_schema = CharField(max_length=32, null=True, help_text="Bright|Dark", default="Bright", index=True)
-    timezone = CharField(max_length=64, null=True, help_text="Timezone", default="UTC+8\tAsia/Shanghai", index=True)
-    last_login_time = DateTimeField(null=True, index=True)
-    is_authenticated = CharField(max_length=1, null=False, default="1", index=True)
-    is_active = CharField(max_length=1, null=False, default="1", index=True)
-    is_anonymous = CharField(max_length=1, null=False, default="0", index=True)
-    login_channel = CharField(null=True, help_text="from which user login", index=True)
-    status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
-    is_superuser = BooleanField(null=True, help_text="is root", default=False, index=True)
-
-    def __str__(self):
-        return self.email
-
-    def get_id(self):
-        jwt = Serializer(secret_key=settings.SECRET_KEY)
-        return jwt.dumps(str(self.access_token))
-
-    class Meta:
-        db_table = "user"
-
-
 class Tenant(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     name = CharField(max_length=100, null=True, help_text="Tenant name", index=True)
@@ -509,30 +463,6 @@ class Tenant(DataBaseModel):
 
     class Meta:
         db_table = "tenant"
-
-
-class UserTenant(DataBaseModel):
-    id = CharField(max_length=32, primary_key=True)
-    user_id = CharField(max_length=32, null=False, index=True)
-    tenant_id = CharField(max_length=32, null=False, index=True)
-    role = CharField(max_length=32, null=False, help_text="UserTenantRole", index=True)
-    invited_by = CharField(max_length=32, null=False, index=True)
-    status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
-
-    class Meta:
-        db_table = "user_tenant"
-
-
-class InvitationCode(DataBaseModel):
-    id = CharField(max_length=32, primary_key=True)
-    code = CharField(max_length=32, null=False, index=True)
-    visit_time = DateTimeField(null=True, index=True)
-    user_id = CharField(max_length=32, null=True, index=True)
-    tenant_id = CharField(max_length=32, null=True, index=True)
-    status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
-
-    class Meta:
-        db_table = "invitation_code"
 
 
 class LLMFactories(DataBaseModel):
@@ -689,135 +619,6 @@ class Task(DataBaseModel):
     chunk_ids = LongTextField(null=True, help_text="chunk ids", default="")
 
 
-class Dialog(DataBaseModel):
-    id = CharField(max_length=32, primary_key=True)
-    tenant_id = CharField(max_length=32, null=False, index=True)
-    name = CharField(max_length=255, null=True, help_text="dialog application name", index=True)
-    description = TextField(null=True, help_text="Dialog description")
-    icon = TextField(null=True, help_text="icon base64 string")
-    language = CharField(max_length=32, null=True, default="Chinese" if "zh_CN" in os.getenv("LANG", "") else "English", help_text="English|Chinese", index=True)
-    llm_id = CharField(max_length=128, null=False, help_text="default llm ID")
-
-    llm_setting = JSONField(null=False, default={"temperature": 0.1, "top_p": 0.3, "frequency_penalty": 0.7, "presence_penalty": 0.4, "max_tokens": 512})
-    prompt_type = CharField(max_length=16, null=False, default="simple", help_text="simple|advanced", index=True)
-    prompt_config = JSONField(
-        null=False,
-        default={"system": "", "prologue": "Hi! I'm your assistant, what can I do for you?", "parameters": [], "empty_response": "Sorry! No relevant content was found in the knowledge base!"},
-    )
-
-    similarity_threshold = FloatField(default=0.2)
-    vector_similarity_weight = FloatField(default=0.3)
-
-    top_n = IntegerField(default=6)
-
-    top_k = IntegerField(default=1024)
-
-    do_refer = CharField(max_length=1, null=False, default="1", help_text="it needs to insert reference index into answer or not")
-
-    rerank_id = CharField(max_length=128, null=False, help_text="default rerank model ID")
-
-    kb_ids = JSONField(null=False, default=[])
-    status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
-
-    class Meta:
-        db_table = "dialog"
-
-
-class Conversation(DataBaseModel):
-    id = CharField(max_length=32, primary_key=True)
-    dialog_id = CharField(max_length=32, null=False, index=True)
-    name = CharField(max_length=255, null=True, help_text="converastion name", index=True)
-    message = JSONField(null=True)
-    reference = JSONField(null=True, default=[])
-    user_id = CharField(max_length=255, null=True, help_text="user_id", index=True)
-
-    class Meta:
-        db_table = "conversation"
-
-
-class APIToken(DataBaseModel):
-    tenant_id = CharField(max_length=32, null=False, index=True)
-    token = CharField(max_length=255, null=False, index=True)
-    dialog_id = CharField(max_length=32, null=True, index=True)
-    source = CharField(max_length=16, null=True, help_text="none|agent|dialog", index=True)
-    beta = CharField(max_length=255, null=True, index=True)
-
-    class Meta:
-        db_table = "api_token"
-        primary_key = CompositeKey("tenant_id", "token")
-
-
-class API4Conversation(DataBaseModel):
-    id = CharField(max_length=32, primary_key=True)
-    dialog_id = CharField(max_length=32, null=False, index=True)
-    user_id = CharField(max_length=255, null=False, help_text="user_id", index=True)
-    message = JSONField(null=True)
-    reference = JSONField(null=True, default=[])
-    tokens = IntegerField(default=0)
-    source = CharField(max_length=16, null=True, help_text="none|agent|dialog", index=True)
-    dsl = JSONField(null=True, default={})
-    duration = FloatField(default=0, index=True)
-    round = IntegerField(default=0, index=True)
-    thumb_up = IntegerField(default=0, index=True)
-
-    class Meta:
-        db_table = "api_4_conversation"
-
-
-class UserCanvas(DataBaseModel):
-    id = CharField(max_length=32, primary_key=True)
-    avatar = TextField(null=True, help_text="avatar base64 string")
-    user_id = CharField(max_length=255, null=False, help_text="user_id", index=True)
-    title = CharField(max_length=255, null=True, help_text="Canvas title")
-
-    permission = CharField(max_length=16, null=False, help_text="me|team", default="me", index=True)
-    description = TextField(null=True, help_text="Canvas description")
-    canvas_type = CharField(max_length=32, null=True, help_text="Canvas type", index=True)
-    dsl = JSONField(null=True, default={})
-
-    class Meta:
-        db_table = "user_canvas"
-
-
-class CanvasTemplate(DataBaseModel):
-    id = CharField(max_length=32, primary_key=True)
-    avatar = TextField(null=True, help_text="avatar base64 string")
-    title = CharField(max_length=255, null=True, help_text="Canvas title")
-
-    description = TextField(null=True, help_text="Canvas description")
-    canvas_type = CharField(max_length=32, null=True, help_text="Canvas type", index=True)
-    dsl = JSONField(null=True, default={})
-
-    class Meta:
-        db_table = "canvas_template"
-
-
-class UserCanvasVersion(DataBaseModel):
-    id = CharField(max_length=32, primary_key=True)
-    user_canvas_id = CharField(max_length=255, null=False, help_text="user_canvas_id", index=True)
-
-    title = CharField(max_length=255, null=True, help_text="Canvas title")
-    description = TextField(null=True, help_text="Canvas description")
-    dsl = JSONField(null=True, default={})
-
-    class Meta:
-        db_table = "user_canvas_version"
-
-
-class MCPServer(DataBaseModel):
-    id = CharField(max_length=32, primary_key=True)
-    name = CharField(max_length=255, null=False, help_text="MCP Server name")
-    tenant_id = CharField(max_length=32, null=False, index=True)
-    url = CharField(max_length=2048, null=False, help_text="MCP Server URL")
-    server_type = CharField(max_length=32, null=False, help_text="MCP Server type")
-    description = TextField(null=True, help_text="MCP Server description")
-    variables = JSONField(null=True, default=dict, help_text="MCP Server variables")
-    headers = JSONField(null=True, default=dict, help_text="MCP Server additional request headers")
-
-    class Meta:
-        db_table = "mcp_server"
-
-
 class Search(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     avatar = TextField(null=True, help_text="avatar base64 string")
@@ -873,19 +674,7 @@ def migrate_db():
     except Exception:
         pass
     try:
-        migrate(migrator.add_column("dialog", "rerank_id", CharField(max_length=128, null=False, default="", help_text="default rerank model ID")))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.add_column("dialog", "top_k", IntegerField(default=1024)))
-    except Exception:
-        pass
-    try:
         migrate(migrator.alter_column_type("tenant_llm", "api_key", CharField(max_length=2048, null=True, help_text="API KEY", index=True)))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.add_column("api_token", "source", CharField(max_length=16, null=True, help_text="none|agent|dialog", index=True)))
     except Exception:
         pass
     try:
@@ -893,27 +682,11 @@ def migrate_db():
     except Exception:
         pass
     try:
-        migrate(migrator.add_column("api_4_conversation", "source", CharField(max_length=16, null=True, help_text="none|agent|dialog", index=True)))
-    except Exception:
-        pass
-    try:
         migrate(migrator.add_column("task", "retry_count", IntegerField(default=0)))
     except Exception:
         pass
     try:
-        migrate(migrator.alter_column_type("api_token", "dialog_id", CharField(max_length=32, null=True, index=True)))
-    except Exception:
-        pass
-    try:
         migrate(migrator.add_column("tenant_llm", "max_tokens", IntegerField(default=8192, index=True)))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.add_column("api_4_conversation", "dsl", JSONField(null=True, default={})))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.add_column("api_token", "beta", CharField(max_length=255, null=True, index=True)))
     except Exception:
         pass
     try:
@@ -923,10 +696,6 @@ def migrate_db():
 
     try:
         migrate(migrator.add_column("task", "chunk_ids", LongTextField(null=True, help_text="chunk ids", default="")))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.add_column("conversation", "user_id", CharField(max_length=255, null=True, help_text="user_id", index=True)))
     except Exception:
         pass
     try:
@@ -942,15 +711,7 @@ def migrate_db():
     except Exception:
         pass
     try:
-        migrate(migrator.add_column("user_canvas", "permission", CharField(max_length=16, null=False, help_text="me|team", default="me", index=True)))
-    except Exception:
-        pass
-    try:
         migrate(migrator.add_column("llm", "is_tools", BooleanField(null=False, help_text="support tools", default=False)))
-    except Exception:
-        pass
-    try:
-        migrate(migrator.add_column("mcp_server", "variables", JSONField(null=True, help_text="MCP Server variables", default=dict)))
     except Exception:
         pass
     try:

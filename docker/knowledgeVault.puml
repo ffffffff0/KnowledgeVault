@@ -1,0 +1,74 @@
+@startuml knowledgeVault
+skinparam dpi 800
+skinparam defaultFontSize 15
+skinparam defaultFontName "FiraCode-Retina"
+autonumber
+
+actor User as U
+
+participant API_Service as A
+participant TASK_Executor as TE
+participant DeepDoc as DD
+
+database DB as DB
+database Milvus as MB
+collections MINIO as SB
+queue Redis as RB
+
+
+group create kb
+U -> A : create kb, post: /kb/create
+A -> DB: save kb info, parse file config
+A --> U: respond api result
+end
+
+group upload file
+U -> A : upload file,  post /file/upload
+A -> DB: save file info
+A -> SB: upload file to minio storage
+A --> U: respond file info to user
+end
+
+group set llm apikey
+U -> A: set apikey, post /llm/set_api_key
+A -> DB: save user llm config
+A --> U: respond api result
+end
+
+group start parse file
+U -> A: parse file, post /file/run
+A -> DB: get file info
+A -> RB: push this parse file task in redis queue
+A --> U: respond api result
+
+RB --> TE: monitor redis queue, get task from queue
+TE -> DB: get user llm config, bind embedding model, get vector size
+TE -> MB: use vector size init milvus collection
+TE -> SB: download file from minio storage
+TE -> DD: split file content into chunks
+TE -> MB: embedding chunks, insert chunks into milvus collection
+TE -> DB: update task status
+end
+
+group update file parse config
+U -> A: update file parse config, post /document/change_parser
+A -> DB: update file parse config
+A --> U: respond api result
+end
+
+group query task status
+U -> A: query task status, get /document/list
+A -> DB: get file parse task status
+A --> U: respond task status
+end
+
+group retrieval knowledge
+U -> A: retrieval knowledge, post /retrieval
+A -> DB: get user llm config
+A -> MB: embedding query, hybrid search in milvus collection, topk=1024
+A -> A: rerank retrieved chunks, topk=5
+A --> U: respond retrieval result
+
+end
+
+@enduml
